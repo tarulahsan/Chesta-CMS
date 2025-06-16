@@ -904,6 +904,21 @@ a:hover {
     transition: var(--transition-fast);
     line-height: 1;
 }
+.rte-button.ai-generate { /* Style for the AI button itself */
+    /* Optional: Add a subtle background or border to make it stand out slightly */
+    /* background-color: oklch(var(--color-accent-2) / 0.1); */
+    /* border-color: oklch(var(--color-accent-2) / 0.3); */
+    font-weight: 600; /* Make text slightly bolder */
+    color: var(--color-accent-2); /* Use accent color for the text */
+}
+.rte-button.ai-generate.loading { /* Style for AI button when loading */
+    /* Specific loading text style if needed, e.g. if "..." looks odd */
+    /* Or add a spinner icon here via pseudo-elements */
+}
+.rte-button.ai-generate:hover:not(:disabled) {
+    background-color: oklch(var(--color-accent-2) / 0.15);
+    color: oklch(from var(--color-accent-2) l calc(l - 10%));
+}
 .rte-button:hover {
     background-color: oklch(0 0 0 / 0.05);
     color: var(--color-text-dark);
@@ -918,6 +933,11 @@ a:hover {
 .rte-button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+.rte-button.ai-generate.loading {
+    /* Ensure loading state matches general disabled state or customize */
+    opacity: 0.6; /* Slightly different opacity if desired */
+    /* If text changes to "..." we might want to ensure it's centered or looks good */
 }
 .rte-button:focus-visible {
     outline: 2px solid var(--color-accent-1);

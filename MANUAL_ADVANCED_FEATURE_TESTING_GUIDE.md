@@ -69,7 +69,7 @@ This guide outlines the steps required to manually test the email sending functi
 4.  **Cloudflare Worker Logs (Troubleshooting):** If the email is not received or the CMS shows an error, check the logs for your Cloudflare Worker in the Cloudflare dashboard. This can provide detailed error messages from the worker itself or from the Brevo API.
 
 ---
-### Potential Failure Points for User Troubleshooting
+### Potential Failure Points for User Troubleshooting (Email)
 
 *   **Incorrect Brevo API Key:** Ensure the `BREVO_API_KEY` secret in the Cloudflare Worker is correct and is a v3 API key.
 *   **Cloudflare Worker URL Misconfiguration:** The URL entered in CMS settings must exactly match the deployed worker's URL.
@@ -81,3 +81,71 @@ This guide outlines the steps required to manually test the email sending functi
 *   **JSON Parsing Errors:** If the worker returns an unexpected response (e.g., HTML error page instead of JSON), the client-side `email.js` might fail to parse it. Worker logs are key here.
 *   **Network Issues:** General internet connectivity issues for the user or Cloudflare.
 *   **Typos in KV Key Names:** Ensure `ADMIN_EMAIL_BREVO` and `SITE_NAME` are the exact keys used in the worker script when it tries to `env.CONFIG_KV.get()`.
+
+---
+### Testing OpenAI Text Generation
+
+This section guides you through testing the OpenAI text generation feature integrated into the CMS's Rich Text Editor.
+
+**1. Prerequisites:**
+
+*   **OpenAI Account & API Key:** You must have an active OpenAI account and a valid API key. You can obtain one from the [OpenAI Platform](https://platform.openai.com/account/api-keys).
+*   **Cloudflare Worker Setup:** Your Cloudflare Worker should already be deployed and configured as per the general CMS setup or the email testing guide (specifically, it needs the `cloudflareWorkerUrl` and `adminSetupToken` correctly set in the CMS).
+
+**2. Cloudflare Worker Configuration (OpenAI Specific):**
+
+1.  **Access Worker Settings:** Log in to your Cloudflare dashboard, navigate to "Workers & Pages", and select your CMS worker.
+2.  **Set OpenAI API Key Secret:**
+    *   Go to your Worker's "Settings" tab, then click on "Variables".
+    *   Under "Secrets" (not "Environment Variables"), click "Add secret".
+    *   **Secret name:** `OPENAI_API_KEY`
+    *   **Secret value:** Paste your OpenAI API key here.
+    *   Click "Save".
+
+**3. CMS Admin Panel Configuration (OpenAI Specific):**
+
+1.  **Navigate to Settings:** In the CMS admin panel, go to "Settings" from the sidebar.
+2.  **Verify Worker URL:** Ensure the "Cloudflare Worker URL" field is correctly filled with your worker's URL.
+3.  **Set Default OpenAI Model (Optional):**
+    *   You can specify a "Default OpenAI Model" (e.g., `gpt-3.5-turbo`, `gpt-4-turbo-preview`).
+    *   If left blank, the system will use a default model defined in the Cloudflare Worker or `ai.js` (typically `gpt-3.5-turbo`).
+4.  **Save Settings:** Click "Save All Settings".
+
+**4. Testing Text Generation in Rich Text Editor:**
+
+1.  **Open Content Editor:** Navigate to "Pages" or "Posts". Either create a new content item or open an existing one for editing.
+2.  **Locate AI Button:** In the Rich Text Editor toolbar (usually for the main content field), find the "AI Gen" button (or a button with a sparkle icon ✨).
+3.  **Generate Text (No Context):**
+    *   Click the "AI Gen" button without selecting any text.
+    *   A browser prompt (`window.prompt`) will appear asking for your instructions.
+    *   Enter a prompt, for example: `Write a short paragraph about the benefits of using a lightweight CMS.`
+    *   Click "OK".
+4.  **Generate Text (With Context):**
+    *   Type some text into the editor (e.g., `The quick brown fox`).
+    *   Select this text.
+    *   Click the "AI Gen" button.
+    *   The browser prompt will indicate that the selected text will be used as context. Enter your instruction, for example: `Expand on this.` or `Translate this to French.`
+    *   Click "OK".
+
+**5. Verification:**
+
+1.  **Loading State:** Observe the "AI Gen" button. It should indicate a loading state (e.g., text changes to "...", becomes disabled/dimmed) while waiting for the AI response.
+2.  **Text Insertion:**
+    *   Upon successful generation, the new text from OpenAI should be inserted into the editor.
+    *   If you had text selected, the generated text should ideally replace the selection.
+3.  **Error Handling:**
+    *   If an error occurs (e.g., incorrect API key, network issue, OpenAI API error), an alert message should appear in the browser displaying the error.
+4.  **Cloudflare Worker Logs (Troubleshooting):**
+    *   If text generation fails or you receive a vague error, check the logs for your Cloudflare Worker in the Cloudflare dashboard (select your worker, then go to "Logs"). This can provide more detailed error messages from the OpenAI API or the worker itself.
+
+---
+### Additional Potential Failure Points (OpenAI Specific)
+
+*   **Incorrect `OPENAI_API_KEY`:** The secret in Cloudflare Worker settings must be a valid OpenAI API key.
+*   **OpenAI Account Issues:**
+    *   Your OpenAI account may not have sufficient credits or might have hit rate limits.
+    *   The API key might have been revoked or have incorrect permissions.
+*   **Invalid OpenAI Model Name:** If you specified a default model in CMS settings, ensure it's a valid and available model name for your OpenAI account (e.g., `gpt-3.5-turbo`, `gpt-4`).
+*   **Network Connectivity:** Issues preventing the Cloudflare Worker from reaching the OpenAI API.
+*   **Cloudflare Worker Execution Time Limits:** Very long generations might exceed Cloudflare's free tier worker execution limits.
+*   **Content Filtering:** OpenAI's safety systems might block prompts or generations. The response might indicate this.

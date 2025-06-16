@@ -14,6 +14,8 @@ const TiptapPlaceholder = window.TiptapPlaceholder.Placeholder;
 import { db, getSetting, setSetting, addContent, getContentById, updateContent, deleteContent, getAllContentByType } from './db.js';
 // Import Email sending function
 import { sendEmail } from './email.js';
+// Import AI text generation function
+import { generateTextWithOpenAI } from './ai.js';
 
 
 // --- Constants ---
@@ -40,21 +42,16 @@ function isActive(currentPath, targetPath, isExact = true) {
 }
 
 // --- Client-side Worker Sync Helper ---
-async function syncAdminSettingsToWorker(settingsToSync) {
-    let workerUrlValue = '';
-    let adminTokenValue = '';
+async function syncAdminSettingsToWorker(settingsToSync, directConfig = null) {
+    let workerUrlValue = directConfig?.cloudflareWorkerUrl;
+    let adminTokenValue = directConfig?.adminSetupToken;
 
-    try {
-        workerUrlValue = await getSetting('cloudflareWorkerUrl');
-        adminTokenValue = await getSetting('adminSetupToken');
+    if (!workerUrlValue) workerUrlValue = await getSetting('cloudflareWorkerUrl');
+    if (!adminTokenValue) adminTokenValue = await getSetting('adminSetupToken');
 
-        if (!workerUrlValue || !adminTokenValue) {
-            console.error('Worker URL or Admin Setup Token not configured in local DB.');
-            return { success: false, error: 'Worker communication details missing from local settings.' };
-        }
-    } catch (dbError) {
-        console.error('Error fetching worker config from DB:', dbError);
-        return { success: false, error: 'Could not retrieve worker communication configuration.' };
+    if (!workerUrlValue || !adminTokenValue) {
+        console.error('Worker URL or Admin Setup Token not configured.');
+        return { success: false, error: 'Worker communication details missing.' };
     }
 
     const workerUrl = workerUrlValue.replace(/\/$/, '');
@@ -64,17 +61,11 @@ async function syncAdminSettingsToWorker(settingsToSync) {
     try {
         const response = await fetch(endpoint, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify(settingsToSync)
         });
-
         const result = await response.json().catch(() => ({ success: false, error: 'Invalid JSON response from worker' }));
-
         if (!response.ok || !result.success) {
-            console.error('Failed to sync settings to worker:', result.error || response.statusText, result.details);
             return { success: false, error: result.error || `Failed to sync settings to worker (Status: ${response.status}).`, details: result.details };
         }
         return { success: true, message: result.message || 'Settings synced to worker successfully.' };
@@ -199,7 +190,7 @@ class SetupWizard extends Component { /* ... (existing SetupWizard component cod
             await setSetting('ADMIN_EMAIL_BREVO', adminEmail);
             const syncResult = await syncAdminSettingsToWorker(
                 { adminEmailForBrevo: adminEmail, siteName: siteName },
-                { cloudflareWorkerUrl, adminSetupToken } // Pass worker config directly for first sync
+                { cloudflareWorkerUrl, adminSetupToken }
             );
             if (!syncResult.success) {
                 this.setState({ error: `Core settings saved locally, but failed to sync Admin Email to Worker: ${syncResult.error}. You can retry in Settings.`, isLoading: false });
@@ -368,10 +359,55 @@ function ContentListPage({ contentType, router }) { /* ... (existing ContentList
 }
 
 // --- RichTextEditor Component ---
-const RichTextEditor = ({ content, onChange, placeholder }) => { /* ... (existing RichTextEditor component code - unchanged) ... */
+const RichTextEditor = ({ content, onChange, placeholder }) => {
     const editorRef = useRef(null);
     const tiptapInstance = useRef(null);
     const [isToolbarActive, setIsToolbarActive] = useState({});
+    const [isAiLoading, setIsAiLoading] = useState(false); // AI Loading state
+
+    const handleAiGenerate = async () => {
+        const editor = tiptapInstance.current;
+        if (!editor) return;
+        setIsAiLoading(true);
+
+        const selection = editor.state.selection;
+        const selectedText = editor.state.doc.textBetween(selection.from, selection.to, '\n\n');
+
+        let userInstructions;
+        if (selectedText.trim()) {
+          userInstructions = window.prompt(
+            `Selected text will be used as context. Enter your instructions for the AI (e.g., "Summarize this", "Expand on this", "Rewrite this in a more formal tone"):`,
+            `Summarize this: "${selectedText.substring(0, 100)}${selectedText.length > 100 ? '...' : ''}"`
+          );
+        } else {
+          userInstructions = window.prompt(
+            "Enter your prompt for AI text generation:",
+            "Write a short paragraph about the future of AI."
+          );
+        }
+
+        if (userInstructions === null) {
+          setIsAiLoading(false);
+          return;
+        }
+
+        const fullPrompt = selectedText.trim()
+          ? `Context: "${selectedText}"\n\nInstruction: "${userInstructions}"`
+          : userInstructions;
+
+        const result = await generateTextWithOpenAI({ prompt: fullPrompt });
+
+        if (result.success && result.generatedText) {
+          let transaction = editor.chain().focus();
+          if (selection.from !== selection.to) {
+              transaction = transaction.deleteRange(selection);
+          }
+          transaction.insertContent(result.generatedText).run();
+        } else {
+          alert(`AI Error: ${result.error || 'Failed to generate text.'}`);
+        }
+        setIsAiLoading(false);
+    };
 
     useEffect(() => {
         if (!TiptapCore || !TiptapStarterKit || !TiptapLink || !TiptapPlaceholder) {
@@ -423,7 +459,8 @@ const RichTextEditor = ({ content, onChange, placeholder }) => { /* ... (existin
             h('button', { type: 'button', class: `rte-button ${isToolbarActive.italic ? 'active' : ''}`, onClick: toggleItalic }, 'I'),
             h('button', { type: 'button', class: `rte-button ${isToolbarActive.link ? 'active' : ''}`, onClick: setLink }, 'Link'),
             h('button', { type: 'button', class: `rte-button ${isToolbarActive.bulletList ? 'active' : ''}`, onClick: toggleBulletList }, 'UL'),
-            h('button', { type: 'button', class: `rte-button ${isToolbarActive.orderedList ? 'active' : ''}`, onClick: toggleOrderedList }, 'OL')
+            h('button', { type: 'button', class: `rte-button ${isToolbarActive.orderedList ? 'active' : ''}`, onClick: toggleOrderedList }, 'OL'),
+            h('button', { type: 'button', class: `rte-button ai-generate ${isAiLoading ? 'loading' : ''}`, onClick: handleAiGenerate, disabled: isAiLoading }, isAiLoading ? '...' : 'AI Gen')
         ),
         h('div', { class: 'rte-content', ref: editorRef })
     );
@@ -990,16 +1027,15 @@ const EmailTestPage = () => { /* ... (existing EmailTestPage component code - un
 };
 
 // --- SettingsPage Component (New/Refined) ---
-const SettingsPage = () => {
+const SettingsPage = () => { /* ... (existing SettingsPage component code - unchanged) ... */
     const [isLoading, setIsLoading] = useState(true);
     const [status, setStatus] = useState({ type: '', message: '' });
-    // State for editable settings
     const [siteName, setSiteName] = useState('');
     const [adminEmailForBrevo, setAdminEmailForBrevo] = useState('');
     const [cloudflareWorkerUrl, setCloudflareWorkerUrl] = useState('');
     const [adminSetupToken, setAdminSetupToken] = useState('');
-    // ... add other settings states as needed: cfAccountID, kvNamespaceIDs, etc.
     const [initialAdminEmailForBrevo, setInitialAdminEmailForBrevo] = useState('');
+    const [openAIDefaultModel, setOpenAIDefaultModel] = useState('');
 
 
     const loadAllSettings = async () => {
@@ -1008,13 +1044,15 @@ const SettingsPage = () => {
             const sName = await getSetting('siteName') || '';
             const cfUrl = await getSetting('cloudflareWorkerUrl') || '';
             const cfToken = await getSetting('adminSetupToken') || '';
-            const brevoEmail = await getSetting('ADMIN_EMAIL_BREVO') || await getSetting('adminEmail') || ''; // Fallback to general adminEmail
+            const brevoEmail = await getSetting('ADMIN_EMAIL_BREVO') || await getSetting('adminEmail') || '';
+            const openAIModel = await getSetting('OPENAI_DEFAULT_MODEL') || '';
 
             setSiteName(sName);
             setCloudflareWorkerUrl(cfUrl);
             setAdminSetupToken(cfToken);
             setAdminEmailForBrevo(brevoEmail);
-            setInitialAdminEmailForBrevo(brevoEmail); // Store initial value to check for changes
+            setInitialAdminEmailForBrevo(brevoEmail);
+            setOpenAIDefaultModel(openAIModel);
 
         } catch (err) {
             console.error("Error loading settings:", err);
@@ -1033,26 +1071,28 @@ const SettingsPage = () => {
         setStatus({ type: 'info', message: 'Saving settings...' });
 
         try {
-            // Save all local settings first
             await setSetting('siteName', siteName);
             await setSetting('cloudflareWorkerUrl', cloudflareWorkerUrl);
-            await setSetting('adminSetupToken', adminSetupToken); // User might update this
+            await setSetting('adminSetupToken', adminSetupToken);
             await setSetting('ADMIN_EMAIL_BREVO', adminEmailForBrevo);
-            // ... save other settings ...
+            await setSetting('OPENAI_DEFAULT_MODEL', openAIDefaultModel);
 
-            setStatus({ type: 'success', message: 'Local settings saved successfully!' });
+            let message = 'Local settings saved successfully!';
+            let messageType = 'success';
 
-            // Sync specific settings to worker if changed
             if (adminEmailForBrevo !== initialAdminEmailForBrevo) {
-                setStatus({ type: 'info', message: 'Local settings saved. Syncing Admin Email for Brevo to worker...' });
+                // setStatus({ type: 'info', message: 'Local settings saved. Syncing Admin Email for Brevo to worker...' }); // Message updated below
                 const syncResult = await syncAdminSettingsToWorker({ adminEmailForBrevo });
                 if (syncResult.success) {
-                    setStatus({ type: 'success', message: 'All settings saved and Admin Email synced to worker!' });
-                    setInitialAdminEmailForBrevo(adminEmailForBrevo); // Update initial value after successful sync
+                    message = 'All settings saved and Admin Email synced to worker!';
+                    setInitialAdminEmailForBrevo(adminEmailForBrevo);
                 } else {
-                    setStatus({ type: 'error', message: `Local settings saved, but failed to sync Admin Email to worker: ${syncResult.error}` });
+                    message = `Local settings saved, but failed to sync Admin Email to worker: ${syncResult.error}`;
+                    messageType = 'error';
                 }
             }
+            setStatus({ type: messageType, message: message });
+
         } catch (err) {
             console.error("Error saving settings:", err);
             setStatus({ type: 'error', message: 'Failed to save settings.' });
@@ -1065,13 +1105,12 @@ const SettingsPage = () => {
 
     return h('div', {class: 'settings-page card'},
         h('h2', {class: 'page-section-title'}, 'CMS Settings'),
-        h('form', { onSubmit: handleSaveSettings, class: 'editor-form' }, // Reuse editor-form for layout
+        h('form', { onSubmit: handleSaveSettings, class: 'editor-form' },
             h('h3', {}, 'General Settings'),
             h('div', {class: 'form-group'},
                 h('label', {for: 'siteName'}, 'Site Name'),
                 h('input', {type: 'text', id: 'siteName', value: siteName, onInput: e => setSiteName(e.target.value)})
             ),
-            // Add Admin Password Change UI here in a future step
 
             h('hr'),
             h('h3', {}, 'Cloudflare Configuration'),
@@ -1083,7 +1122,6 @@ const SettingsPage = () => {
                 h('label', {for: 'adminSetupToken'}, 'Cloudflare Worker Admin Setup Token'),
                 h('input', {type: 'password', id: 'adminSetupToken', value: adminSetupToken, onInput: e => setAdminSetupToken(e.target.value), autocomplete: "new-password"})
             ),
-            // Add KV Namespace ID fields here if they need to be editable post-setup
 
             h('hr'),
             h('h3', {}, 'Email (Brevo) Configuration'),
@@ -1096,9 +1134,23 @@ const SettingsPage = () => {
                 h('label', {for: 'adminEmailForBrevo'}, 'Admin Email for Brevo (Sender Email)'),
                 h('input', {type: 'email', id: 'adminEmailForBrevo', value: adminEmailForBrevo, onInput: e => setAdminEmailForBrevo(e.target.value)})
             ),
-            // (Optional V1.1) Test Brevo Connection button here
 
-            h('button', {type: 'submit', class: 'button-primary', disabled: isLoading}, isLoading ? 'Saving...' : 'Save All Settings'),
+            h('hr'),
+            h('h3', {}, 'OpenAI Configuration'),
+            h('div', {class: 'form-group settings-instruction-block'},
+                h('label', {}, 'OpenAI API Key'),
+                h('p', {}, 'Your OpenAI API Key must be set as a secret named `OPENAI_API_KEY` in your Cloudflare Worker\'s settings via the Cloudflare dashboard. This key is not stored in the CMS itself for security reasons.'),
+                h('a', {href: 'https://platform.openai.com/docs/quickstart/account-setup', target: '_blank', rel: 'noopener noreferrer'}, 'OpenAI API Key Documentation'),
+                h('span', {style: {margin: '0 5px'}}, ' | '),
+                h('a', {href: 'https://developers.cloudflare.com/workers/configuration/secrets/', target: '_blank', rel: 'noopener noreferrer'}, 'Cloudflare Secrets Documentation')
+            ),
+            h('div', {class: 'form-group'},
+                h('label', {for: 'openAIDefaultModel'}, 'Default OpenAI Model (Optional)'),
+                h('input', {type: 'text', id: 'openAIDefaultModel', value: openAIDefaultModel, placeholder: 'e.g., gpt-3.5-turbo, gpt-4-turbo-preview', onInput: e => setOpenAIDefaultModel(e.target.value)}),
+                h('p', {class: 'wizard-note', style: {fontSize: '0.85em', marginTop: '8px', marginBottom: '0px', padding: '10px 12px'}}, 'This model (e.g., gpt-3.5-turbo) will be used by default for AI text generation if no specific model is chosen in the editor. The Cloudflare Worker also has a default if this is left blank.')
+            ),
+
+            h('button', {type: 'submit', class: 'button-primary', disabled: isLoading, style:{marginTop: '20px'}}, isLoading ? 'Saving...' : 'Save All Settings'),
             status.message && h('div', {
                 class: `status-message ${status.type === 'success' ? 'success-message' : status.type === 'error' ? 'login-error' : 'info-message'}`,
                 style: {marginTop: '20px'}
@@ -1130,7 +1182,7 @@ function hexToOklch(hexString, fallbackOklch) { /* ... (unchanged) ... */
 const appRoot = document.getElementById('admin-app');
 if (appRoot) {
     render(h(App), appRoot);
-    console.log("Admin SPA Initialized with Preact, Navigo, Dexie (db.js). Settings Page refined for Brevo config.");
+    console.log("Admin SPA Initialized with Preact, Navigo, Dexie (db.js). Settings page refined for Brevo.");
 } else {
     console.error("Admin app root element (#admin-app) not found.");
 }
