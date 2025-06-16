@@ -9,6 +9,8 @@
     --color-danger: oklch(60% 0.23 25);   /* Reddish for error messages & delete */
     --color-edit: oklch(65% 0.22 120);    /* Greenish for edit (can be same as success) */
     --color-success: oklch(65% 0.22 150); /* Tealish Green, same as accent-2 for consistency */
+    --color-info: oklch(60% 0.22 230); /* Bluish for info messages */
+
 
     --color-background-main: oklch(98% 0.005 270);
     --color-background-glass: oklch(97% 0.01 270 / 0.6);
@@ -178,6 +180,29 @@ body {
     color: var(--color-text-on-primary);
 }
 
+.sidebar-submenu {
+    list-style: none;
+    padding-left: 20px;
+    margin-top: -5px;
+    margin-bottom: 8px;
+}
+.sidebar-submenu a {
+    font-size: 0.9em;
+    padding: 8px 15px;
+    color: var(--color-text-medium);
+    margin-bottom: 4px;
+}
+.sidebar-submenu a:hover {
+    background-color: oklch(0 0 0 / 0.03);
+    color: var(--color-text-dark);
+}
+.sidebar-submenu a.active {
+    background: oklch(from var(--color-primary-gradient-start) l calc(l + 10%) / 0.2);
+    color: var(--color-primary-gradient-start);
+    font-weight: 600;
+    box-shadow: none;
+}
+
 
 /* Content Area Styling */
 .admin-content-area {
@@ -187,7 +212,7 @@ body {
     background-color: var(--color-background-main);
 }
 
-.admin-content-area > h1 {
+.admin-content-area > h1, .page-section-title {
     font-size: 2em;
     color: var(--color-text-dark);
     margin-top: 0;
@@ -195,6 +220,13 @@ body {
     border-bottom: 1px solid oklch(90% 0.01 270 / 0.7);
     padding-bottom: 15px;
 }
+.page-subtitle {
+    font-size: 1em;
+    color: var(--color-text-medium);
+    margin-top: -20px;
+    margin-bottom: 25px;
+}
+
 
 /* Glassmorphism Utility Class */
 .glassmorphic {
@@ -258,17 +290,28 @@ body {
     font-size: 0.95em;
 }
 
-.wizard-note {
+.wizard-note, .settings-instruction-block { /* Shared style for notes/instructions */
     font-size: 0.9em;
     color: var(--color-text-medium);
-    margin-top: 20px;
-    margin-bottom: 30px;
-    text-align: center;
-    padding: 12px;
+    margin-top: 10px; /* Adjusted margin for settings */
+    margin-bottom: 15px; /* Adjusted margin for settings */
+    text-align: left; /* Instructions are usually left-aligned */
+    padding: 12px 15px; /* More padding */
     background-color: oklch(var(--color-accent-2) / 0.08);
     border-radius: var(--border-radius-standard);
     border: 1px solid oklch(var(--color-accent-2) / 0.2);
+    line-height: 1.5;
 }
+.settings-instruction-block p {
+    margin: 0 0 0.5em 0;
+}
+.settings-instruction-block p:last-child {
+    margin-bottom: 0;
+}
+.settings-instruction-block a {
+    font-weight: 600;
+}
+
 
 .login-button, .wizard-button {
     width: 100%;
@@ -278,7 +321,7 @@ body {
     letter-spacing: 0.5px;
 }
 
-.login-error, .wizard-error, .theme-builder-message.login-error {
+.status-message, .login-error, .wizard-error, .theme-builder-message.login-error {
     color: var(--color-error);
     background-color: oklch(var(--color-error) / 0.1);
     border: 1px solid oklch(var(--color-error) / 0.3);
@@ -286,17 +329,20 @@ body {
     border-radius: var(--border-radius-standard);
     margin-bottom: 20px;
     font-size: 0.95em;
+    margin-top: 20px;
 }
 
-.success-message, .theme-builder-message.success-message {
+.status-message.success-message, .theme-builder-message.success-message {
     color: var(--color-success);
     background-color: oklch(var(--color-success) / 0.1);
     border: 1px solid oklch(var(--color-success) / 0.3);
-    padding: 12px 15px;
-    border-radius: var(--border-radius-standard);
-    margin-bottom: 20px;
-    font-size: 0.95em;
 }
+.status-message.info-message {
+    color: var(--color-info);
+    background-color: oklch(var(--color-info) / 0.1);
+    border: 1px solid oklch(var(--color-info) / 0.3);
+}
+
 
 /* Content List Page Styles */
 .content-list-header {
@@ -369,16 +415,33 @@ body {
     border-radius: var(--border-radius-large);
 }
 
-/* Content Editor Page Styles */
-.editor-form {
+/* Content Editor Page & Email Test Page & Settings Page Styles */
+.editor-form, .email-test-page > form, .settings-page > form {
     padding: 30px;
     background-color: var(--color-surface);
     border-radius: var(--border-radius-large);
     box-shadow: var(--shadow-standard);
 }
-.editor-form .form-group {
+.editor-form .form-group, .email-test-page .form-group, .settings-page .form-group {
     margin-bottom: 25px;
 }
+.email-test-page .form-group textarea,
+.email-test-page .ProseMirror {
+    min-height: 120px;
+    max-height: 250px;
+}
+.settings-page h3 { /* Subheadings within settings form */
+    font-size: 1.3em;
+    color: var(--color-text-dark);
+    margin-top: 30px;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-glass);
+}
+.settings-page h3:first-of-type {
+    margin-top: 0;
+}
+
 
 /* Theme Builder Page Styles */
 .theme-builder-header {
@@ -434,8 +497,8 @@ body {
 .theme-controls-panel {
     padding: 20px;
     border-radius: var(--border-radius-large);
-    height: calc(100vh - 60px - 30px - 50px - 30px); /* Approx: viewport - header - content_padding_top - builder_header - content_padding_bottom */
-    min-height: 400px; /* Ensure it's usable even if viewport is small */
+    height: calc(100vh - 60px - 30px - 50px - 30px);
+    min-height: 400px;
     overflow-y: auto;
 }
 .theme-controls-panel .control-panel-segment {
@@ -592,7 +655,6 @@ body {
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
     cursor: pointer;
     border-radius: 0;
-    position: relative; /* For drag handle positioning if needed */
 }
 .page-section-item-wrapper.selected {
     border-color: var(--color-accent-1);
@@ -607,7 +669,6 @@ body {
     display: flex;
     align-items: center;
     transition: var(--transition-fast);
-    position: relative; /* For absolute positioned elements inside if any */
 }
 
 
@@ -620,7 +681,7 @@ body {
     opacity: 0.6;
     transition: opacity var(--transition-fast);
 }
-.page-section-item-wrapper:hover .drag-handle { /* Show handle more clearly on wrapper hover */
+.page-section-item-wrapper:hover .drag-handle {
     opacity: 1;
 }
 .drag-handle:hover {
@@ -824,8 +885,8 @@ a:hover {
 .rte-toolbar {
     display: flex;
     flex-wrap: wrap;
-    gap: 5px; /* Reduced gap */
-    padding: 8px; /* Reduced padding */
+    gap: 5px;
+    padding: 8px;
     background-color: var(--color-surface-alt);
     border-radius: var(--border-radius-standard) var(--border-radius-standard) 0 0;
     border: 1px solid var(--border-glass);
@@ -835,13 +896,13 @@ a:hover {
     background-color: transparent;
     border: 1px solid transparent;
     color: var(--color-text-medium);
-    padding: 6px 8px; /* Adjusted padding */
+    padding: 6px 8px;
     border-radius: 6px;
     cursor: pointer;
-    font-size: 0.9em; /* Consistent font size */
+    font-size: 0.9em;
     box-shadow: none;
     transition: var(--transition-fast);
-    line-height: 1; /* Ensure consistent height */
+    line-height: 1;
 }
 .rte-button:hover {
     background-color: oklch(0 0 0 / 0.05);
@@ -858,9 +919,9 @@ a:hover {
     opacity: 0.5;
     cursor: not-allowed;
 }
-.rte-button:focus-visible { /* Specific focus for toolbar buttons */
+.rte-button:focus-visible {
     outline: 2px solid var(--color-accent-1);
-    outline-offset: -2px; /* Inset outline */
+    outline-offset: -2px;
 }
 
 
@@ -913,12 +974,12 @@ a:hover {
 .theme-controls-panel .ProseMirror {
     min-height: 100px;
     max-height: 200px;
-    font-size: 0.95em; /* Slightly smaller font for controls panel context */
+    font-size: 0.95em;
     line-height: 1.5;
 }
 .theme-controls-panel .rte-toolbar {
     padding: 6px;
-    gap: 4px; /* Tighter gap for buttons */
+    gap: 4px;
 }
 .theme-controls-panel .rte-button {
     padding: 5px 8px;
@@ -937,8 +998,42 @@ a:hover {
 ::-webkit-scrollbar-thumb {
     background: oklch(var(--color-text-medium) / 0.5);
     border-radius: var(--border-radius-standard);
-    border: 2px solid oklch(var(--color-background-main) l calc(l - 5%)); /* Padding around thumb */
+    border: 2px solid oklch(var(--color-background-main) l calc(l - 5%));
 }
 ::-webkit-scrollbar-thumb:hover {
     background: oklch(var(--color-text-medium) / 0.7);
+}
+
+/* Email Test Page Specific Styles */
+.email-test-page.card {
+    margin-top: 0;
+}
+.email-test-page .page-section-title {
+    font-size: 1.8em;
+    margin-bottom: 10px;
+}
+.email-test-page .page-subtitle {
+    margin-bottom: 25px;
+}
+.email-test-page .editor-form .form-group {
+    margin-bottom: 20px;
+}
+.email-test-page .ProseMirror {
+    min-height: 150px;
+    max-height: 250px;
+}
+/* Status message styling is now consolidated */
+.status-message {
+    padding: 12px 15px;
+    border-radius: var(--border-radius-standard);
+    margin-top: 20px;
+    font-size: 0.95em;
+    text-align: center;
+}
+/* .status-message.success-message - already defined */
+/* .status-message.error-message - already defined as .login-error */
+.status-message.info-message {
+    color: var(--color-info);
+    background-color: oklch(var(--color-info) / 0.1);
+    border: 1px solid oklch(var(--color-info) / 0.3);
 }

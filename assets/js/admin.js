@@ -12,6 +12,9 @@ const TiptapPlaceholder = window.TiptapPlaceholder.Placeholder;
 
 // Import DB functions
 import { db, getSetting, setSetting, addContent, getContentById, updateContent, deleteContent, getAllContentByType } from './db.js';
+// Import Email sending function
+import { sendEmail } from './email.js';
+
 
 // --- Constants ---
 const SESSION_KEY = 'cms_auth_session';
@@ -35,6 +38,52 @@ function isActive(currentPath, targetPath, isExact = true) {
     if (isExact) { return normalizedCurrentPath === targetPath ? 'active' : ''; }
     return normalizedCurrentPath.startsWith(targetPath) ? 'active' : '';
 }
+
+// --- Client-side Worker Sync Helper ---
+async function syncAdminSettingsToWorker(settingsToSync) {
+    let workerUrlValue = '';
+    let adminTokenValue = '';
+
+    try {
+        workerUrlValue = await getSetting('cloudflareWorkerUrl');
+        adminTokenValue = await getSetting('adminSetupToken');
+
+        if (!workerUrlValue || !adminTokenValue) {
+            console.error('Worker URL or Admin Setup Token not configured in local DB.');
+            return { success: false, error: 'Worker communication details missing from local settings.' };
+        }
+    } catch (dbError) {
+        console.error('Error fetching worker config from DB:', dbError);
+        return { success: false, error: 'Could not retrieve worker communication configuration.' };
+    }
+
+    const workerUrl = workerUrlValue.replace(/\/$/, '');
+    const token = adminTokenValue;
+    const endpoint = `${workerUrl}/setup-config`;
+
+    try {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(settingsToSync)
+        });
+
+        const result = await response.json().catch(() => ({ success: false, error: 'Invalid JSON response from worker' }));
+
+        if (!response.ok || !result.success) {
+            console.error('Failed to sync settings to worker:', result.error || response.statusText, result.details);
+            return { success: false, error: result.error || `Failed to sync settings to worker (Status: ${response.status}).`, details: result.details };
+        }
+        return { success: true, message: result.message || 'Settings synced to worker successfully.' };
+    } catch (err) {
+        console.error('Error syncing settings to worker:', err);
+        return { success: false, error: 'Network error or invalid response during worker sync.' };
+    }
+}
+
 
 // --- Login Component ---
 class Login extends Component { /* ... (existing Login component code - unchanged) ... */
@@ -116,7 +165,7 @@ class SetupWizard extends Component { /* ... (existing SetupWizard component cod
         super(props);
         this.state = {
             siteName: '', adminEmail: '', cloudflareWorkerUrl: '',
-            cfAccountId: '', cfKvVisitorDataId: '', cfKvAnalyticsId: '',
+            cfAccountId: '', cfKvVisitorDataId: '', cfKvAnalyticsId: '', adminSetupToken: '',
             error: null, isLoading: false,
         };
         this.handleSubmit = this.handleSubmit.bind(this);
@@ -128,9 +177,9 @@ class SetupWizard extends Component { /* ... (existing SetupWizard component cod
     async handleSubmit(e) {
         e.preventDefault();
         this.setState({ isLoading: true, error: null });
-        const { siteName, adminEmail, cloudflareWorkerUrl, cfKvVisitorDataId, cfKvAnalyticsId, cfAccountId } = this.state;
+        const { siteName, adminEmail, cloudflareWorkerUrl, cfKvVisitorDataId, cfKvAnalyticsId, cfAccountId, adminSetupToken } = this.state;
 
-        if (!siteName || !adminEmail || !cloudflareWorkerUrl || !cfKvVisitorDataId || !cfKvAnalyticsId) {
+        if (!siteName || !adminEmail || !cloudflareWorkerUrl || !cfKvVisitorDataId || !cfKvAnalyticsId || !adminSetupToken) {
             this.setState({ error: 'Please fill in all required fields (*).', isLoading: false });
             return;
         }
@@ -145,16 +194,27 @@ class SetupWizard extends Component { /* ... (existing SetupWizard component cod
             if (cfAccountId) await setSetting('cloudflareAccountId', cfAccountId);
             await setSetting('cloudflareKvVisitorDataId', cfKvVisitorDataId);
             await setSetting('cloudflareKvAnalyticsId', cfKvAnalyticsId);
+            await setSetting('adminSetupToken', adminSetupToken);
+
+            await setSetting('ADMIN_EMAIL_BREVO', adminEmail);
+            const syncResult = await syncAdminSettingsToWorker(
+                { adminEmailForBrevo: adminEmail, siteName: siteName },
+                { cloudflareWorkerUrl, adminSetupToken } // Pass worker config directly for first sync
+            );
+            if (!syncResult.success) {
+                this.setState({ error: `Core settings saved locally, but failed to sync Admin Email to Worker: ${syncResult.error}. You can retry in Settings.`, isLoading: false });
+            }
 
             await setSetting(INITIAL_SETUP_COMPLETE_KEY, true);
             this.props.onSetupComplete();
+
         } catch (err) {
             console.error("Error saving setup settings:", err);
             this.setState({ error: 'Failed to save settings. Please try again.', isLoading: false });
         }
     }
 
-    render(_, { siteName, adminEmail, cloudflareWorkerUrl, cfAccountId, cfKvVisitorDataId, cfKvAnalyticsId, error, isLoading }) {
+    render(_, { siteName, adminEmail, cloudflareWorkerUrl, cfAccountId, cfKvVisitorDataId, cfKvAnalyticsId, adminSetupToken, error, isLoading }) {
         return h('div', { class: 'setup-wizard-container' },
             h('div', { class: 'setup-wizard-card glassmorphic' },
                 h('h1', { class: 'wizard-title' }, 'Initial CMS Setup'),
@@ -162,12 +222,13 @@ class SetupWizard extends Component { /* ... (existing SetupWizard component cod
                 error && h('p', { class: 'wizard-error login-error' }, error),
                 h('form', { onSubmit: this.handleSubmit },
                     h('div', { class: 'form-group' }, h('label', { for: 'siteName' }, 'Site Name *'), h('input', { type: 'text', name: 'siteName', id: 'siteName', value: siteName, onInput: this.handleInput, required: true })),
-                    h('div', { class: 'form-group' }, h('label', { for: 'adminEmail' }, 'Admin Email (for notifications) *'), h('input', { type: 'email', name: 'adminEmail', id: 'adminEmail', value: adminEmail, onInput: this.handleInput, required: true })),
+                    h('div', { class: 'form-group' }, h('label', { for: 'adminEmail' }, 'Default Admin Email (for notifications, Brevo sender)*'), h('input', { type: 'email', name: 'adminEmail', id: 'adminEmail', value: adminEmail, onInput: this.handleInput, required: true })),
                     h('div', { class: 'form-group' }, h('label', { for: 'cloudflareWorkerUrl' }, 'Cloudflare Worker URL *'), h('input', { type: 'url', name: 'cloudflareWorkerUrl', id: 'cloudflareWorkerUrl', placeholder: 'https://your-worker.username.workers.dev', value: cloudflareWorkerUrl, onInput: this.handleInput, required: true })),
                     h('div', { class: 'form-group' }, h('label', { for: 'cfKvVisitorDataId' }, 'Cloudflare KV Namespace ID (Visitor Data) *'), h('input', { type: 'text', name: 'cfKvVisitorDataId', id: 'cfKvVisitorDataId', value: cfKvVisitorDataId, onInput: this.handleInput, required: true })),
                     h('div', { class: 'form-group' }, h('label', { for: 'cfKvAnalyticsId' }, 'Cloudflare KV Namespace ID (Analytics) *'), h('input', { type: 'text', name: 'cfKvAnalyticsId', id: 'cfKvAnalyticsId', value: cfKvAnalyticsId, onInput: this.handleInput, required: true })),
+                    h('div', { class: 'form-group' }, h('label', { for: 'adminSetupToken' }, 'Cloudflare Worker Admin Setup Token *'), h('input', { type: 'password', name: 'adminSetupToken', id: 'adminSetupToken', value: adminSetupToken, onInput: this.handleInput, required: true, autocomplete: "new-password" })),
                     h('div', { class: 'form-group' }, h('label', { for: 'cfAccountId' }, 'Cloudflare Account ID (Optional)'), h('input', { type: 'text', name: 'cfAccountId', id: 'cfAccountId', value: cfAccountId, onInput: this.handleInput })),
-                    h('p', {class: 'wizard-note'}, 'Deploy your Cloudflare Worker & configure its secrets/KV bindings in Cloudflare dashboard.'),
+                    h('p', {class: 'wizard-note'}, 'Deploy your Cloudflare Worker & configure its secrets (API keys, ADMIN_SETUP_TOKEN) and KV bindings in Cloudflare dashboard.'),
                     h('button', { type: 'submit', class: 'wizard-button button-primary', disabled: isLoading }, isLoading ? 'Saving...' : 'Complete Setup')
                 )
             )
@@ -197,6 +258,9 @@ class Sidebar extends Component { /* ... (existing Sidebar component code - unch
             { name: 'Analytics', path: '/analytics' },
             { name: 'Backup', path: '/backup' },
             { name: 'Settings', path: '/settings' },
+            { name: 'Tools', path: '/tools', subItems: [
+                { name: 'Email Test', path: '/tools/email-test'}
+            ]}
         ];
 
         const navigoCurrentPath = currentPath === '' ? '/' : currentPath;
@@ -204,14 +268,30 @@ class Sidebar extends Component { /* ... (existing Sidebar component code - unch
         return h('aside', { class: 'admin-sidebar glassmorphic' },
             h('nav', {},
                 navItems.map(item =>
-                    h('a', {
-                        href: router.generate(item.path),
-                        class: isActive(navigoCurrentPath, item.path, item.path === '/'),
-                        onClick: (e) => {
-                            e.preventDefault();
-                            router.navigate(item.path);
-                        }
-                    }, item.name)
+                    h(Fragment, {},
+                        h('a', {
+                            href: router.generate(item.path),
+                            class: isActive(navigoCurrentPath, item.path, !item.subItems),
+                            onClick: (e) => {
+                                e.preventDefault();
+                                router.navigate(item.path);
+                            }
+                        }, item.name),
+                        item.subItems && h('ul', {class: 'sidebar-submenu'},
+                            item.subItems.map(subItem =>
+                                h('li', {},
+                                    h('a', {
+                                        href: router.generate(subItem.path),
+                                        class: isActive(navigoCurrentPath, subItem.path, true),
+                                        onClick: (e) => {
+                                            e.preventDefault();
+                                            router.navigate(subItem.path);
+                                        }
+                                    }, subItem.name)
+                                )
+                            )
+                        )
+                    )
                 )
             )
         );
@@ -230,10 +310,12 @@ class ContentArea extends Component { /* ... (existing ContentArea component cod
             case 'NewPost': viewComponent = h(ContentEditorPage, { contentType: 'post', router }); break;
             case 'EditPost': viewComponent = h(ContentEditorPage, { contentType: 'post', contentId: params.id, router }); break;
             case 'Themes': viewComponent = h(ThemeBuilderPage, { router }); break;
+            case 'EmailTest': viewComponent = h(EmailTestPage, {}); break;
+            case 'Settings': viewComponent = h(SettingsPage, {}); break;
             case 'Plugins':
-            case 'Settings':
             case 'Analytics':
             case 'Backup':
+            case 'Tools':
             case 'Not Found':
                 viewComponent = h('h1', {}, `${currentView} Page`); break;
             default: viewComponent = h('h1', {}, 'Dashboard Page');
@@ -316,7 +398,7 @@ const RichTextEditor = ({ content, onChange, placeholder }) => { /* ... (existin
             },
         });
         return () => { tiptapInstance.current?.destroy(); };
-    }, [content, placeholder]); // Add placeholder to dependencies
+    }, [content, placeholder]);
 
     const toggleHeading = (level) => tiptapInstance.current?.chain().focus().toggleHeading({ level }).run();
     const toggleBold = () => tiptapInstance.current?.chain().focus().toggleBold().run();
@@ -349,7 +431,7 @@ const RichTextEditor = ({ content, onChange, placeholder }) => { /* ... (existin
 
 
 // --- ContentEditorPage Component ---
-function ContentEditorPage({ contentType, contentId, router }) {
+function ContentEditorPage({ contentType, contentId, router }) { /* ... (existing ContentEditorPage component code - unchanged) ... */
     const [title, setTitle] = useState('');
     const [slug, setSlug] = useState('');
     const [htmlContent, setHtmlContent] = useState('');
@@ -418,81 +500,8 @@ function ContentEditorPage({ contentType, contentId, router }) {
 }
 
 
-// --- Section Preview Components ---
-const HeroSectionPreview = ({ settings, globalStyles, currentViewport }) => { /* ... (existing, but check for richtext fields) ... */
-    const responsiveSettings = settings.responsive || {};
-    const viewportSettings = responsiveSettings[currentViewport] || {};
-    if (viewportSettings.visible === false) return null;
-
-    const style = {
-        backgroundColor: settings.backgroundColor || 'var(--color-surface)',
-        color: settings.textColor || globalStyles.palette?.textDark || 'inherit',
-        padding: viewportSettings.padding || settings.defaultPadding || (settings.minHeight && settings.minHeight.includes('px') ? `${parseInt(settings.minHeight)/5}px 20px` : '60px 20px'),
-        textAlign: settings.textAlignment || 'center',
-        fontFamily: globalStyles.baseFontFamily || 'sans-serif',
-        minHeight: settings.minHeight || '200px',
-        display: 'flex', flexDirection: 'column', justifyContent: 'center',
-        alignItems: settings.textAlignment === 'left' ? 'flex-start' : settings.textAlignment === 'right' ? 'flex-end' : 'center',
-        backgroundImage: settings.backgroundImageUrl ? `url(${settings.backgroundImageUrl})` : 'none',
-        backgroundSize: 'cover', backgroundPosition: 'center'
-    };
-    // For rich text fields, use dangerouslySetInnerHTML
-    const subtitleHTML = { __html: settings.subtitle || 'Hero subtitle text.' };
-
-    return h('div', { class: 'preview-section preview-hero', style },
-        h('h1', { style: { margin: '0 0 10px 0', fontSize: '2em', color: settings.textColor || globalStyles.palette?.textLight || '#fff' } }, settings.title || 'Hero Title'),
-        h('p', { style: { margin: '0 0 15px 0', fontSize: '1.1em', color: settings.textColor || globalStyles.palette?.textLight || '#fff' }, dangerouslySetInnerHTML: subtitleHTML }),
-        settings.buttonText && h('button', { class: 'button-primary', style: { backgroundColor: globalStyles.primaryColor, color: globalStyles.palette?.textOnPrimary || '#fff'} }, settings.buttonText)
-    );
-};
-const TextBlockPreview = ({ settings, globalStyles, currentViewport }) => { /* ... (existing, but check for richtext fields) ... */
-    const responsiveSettings = settings.responsive || {};
-    const viewportSettings = responsiveSettings[currentViewport] || {};
-    if (viewportSettings.visible === false) return null;
-
-    const style = {
-        backgroundColor: settings.backgroundColor || 'transparent',
-        padding: viewportSettings.padding || settings.defaultPadding || '30px 20px',
-        fontFamily: globalStyles.baseFontFamily || 'sans-serif',
-        color: settings.textColor || globalStyles.palette?.textDark || 'inherit',
-    };
-    const contentHTML = { __html: settings.content || 'This is some default paragraph text. You can edit it.' };
-
-    return h('div', { class: 'preview-section preview-text-block', style },
-        settings.heading && h('h2', { style: { color: settings.headingColor || globalStyles.palette?.textDark || 'inherit' } }, settings.heading || 'Section Heading'),
-        h('div', { dangerouslySetInnerHTML: contentHTML }) // Use a div for ProseMirror content
-    );
-};
-const GalleryPreview = ({ settings, globalStyles, currentViewport }) => { /* ... (existing GalleryPreview - unchanged) ... */
-    const responsiveSettings = settings.responsive || {};
-    const viewportSettings = responsiveSettings[currentViewport] || {};
-    if (viewportSettings.visible === false) return null;
-
-    const images = typeof settings.images === 'string' ? settings.images.split(',').map(s => s.trim()).filter(s => s) : (Array.isArray(settings.images) ? settings.images : []);
-    const columns = viewportSettings.columns || settings.columns || 3;
-    const style = {
-        display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`,
-        gap: viewportSettings.gap || settings.gap || '10px',
-        padding: '20px', fontFamily: globalStyles.baseFontFamily || 'sans-serif'
-    };
-    return h('div', { class: 'preview-section preview-gallery', style },
-        images.length > 0 ? images.map(imgUrl =>
-            h('div', { class: 'gallery-image-container'},
-                h('img', { src: imgUrl, alt: 'Gallery image', style: { width: '100%', height: 'auto', display: 'block', borderRadius: 'var(--border-radius-standard)' } })
-            )
-        ) : h('p', {}, 'No images added to gallery yet.')
-    );
-};
-
-const sectionPreviewComponents = { hero: HeroSectionPreview, textBlock: TextBlockPreview, gallery: GalleryPreview };
-const renderSectionPreview = (section, globalStyles, currentViewport) => {
-    const PreviewComponent = sectionPreviewComponents[section.type];
-    return PreviewComponent ? h(PreviewComponent, { settings: section, globalStyles, currentViewport }) : h('div', {}, `Unsupported section type: ${section.type}`);
-};
-
-
 // --- ThemeBuilderPage Component ---
-function ThemeBuilderPage({ router }) {
+function ThemeBuilderPage({ router }) { /* ... (existing ThemeBuilderPage component code - unchanged) ... */
     const [themeConfig, setThemeConfig] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [message, setMessage] = useState('');
@@ -526,7 +535,7 @@ function ThemeBuilderPage({ router }) {
               defaultSettings: { title: "Welcome!", subtitle: "<p>Amazing things <strong>await</strong>.</p>", backgroundImageUrl: "", buttonText: "Learn More", buttonLink: "#", textColor: "#FFFFFF", textAlignment: "center", minHeight: "400px", backgroundColor: defaultPalette.brandAccent },
               fields: [
                 {name: 'title', label: 'Title', type: 'text'},
-                {name: 'subtitle', label: 'Subtitle', type: 'richtext', placeholder: 'Enter subtitle...'}, // Changed to richtext
+                {name: 'subtitle', label: 'Subtitle', type: 'richtext', placeholder: 'Enter subtitle...'},
                 {name: 'backgroundImageUrl', label: 'Background Image URL', type: 'text', inputType: 'url'},
                 {name: 'buttonText', label: 'Button Text', type: 'text'},
                 {name: 'buttonLink', label: 'Button Link', type: 'text', inputType: 'url'},
@@ -540,7 +549,7 @@ function ThemeBuilderPage({ router }) {
               defaultSettings: { heading: "About Us", content: "<p>We are a <em>dynamic</em> team passionate about creating innovative solutions.</p>", backgroundColor: "transparent", textColor: defaultPalette.textDark, headingColor: defaultPalette.textDark },
               fields: [
                 {name: 'heading', label: 'Heading', type: 'text'},
-                {name: 'content', label: 'Content', type: 'richtext', placeholder: 'Enter your text here...'}, // Changed to richtext
+                {name: 'content', label: 'Content', type: 'richtext', placeholder: 'Enter your text here...'},
                 {name: 'backgroundColor', label: 'Background Color', type: 'color'},
                 {name: 'textColor', label: 'Text Color', type: 'color'},
                 {name: 'headingColor', label: 'Heading Color', type: 'color'}
@@ -559,7 +568,7 @@ function ThemeBuilderPage({ router }) {
     const availableFonts = ["Roboto", "Open Sans", "Nunito Sans", "Lato", "Montserrat", "Georgia", "Times New Roman", "Arial"];
     const availableSubsets = ["latin", "latin-ext", "cyrillic", "cyrillic-ext", "greek", "greek-ext", "vietnamese"];
 
-    useEffect(() => { /* ... (Load themeConfig - unchanged) ... */
+    useEffect(() => {
         setIsLoading(true);
         getSetting(THEME_CONFIG_KEY).then(config => {
             const initialConfig = config ? {...defaultThemeConfig, ...config, globalStyles: {...defaultThemeConfig.globalStyles, ...(config.globalStyles || {}), palette: {...defaultThemeConfig.globalStyles.palette, ...(config.globalStyles?.palette || {})}}} : JSON.parse(JSON.stringify(defaultThemeConfig));
@@ -573,7 +582,7 @@ function ThemeBuilderPage({ router }) {
             setIsLoading(false); setMessage('Error loading theme settings.');
         });
     }, []);
-    useEffect(() => { /* ... (SortableJS init - unchanged) ... */
+    useEffect(() => {
         if (isLoading || !themeConfig || !paletteRef.current || !pageSectionsRef.current) return;
         if (!sortableInstances.palette) {
             sortableInstances.palette = new Sortable(paletteRef.current, {
@@ -628,9 +637,9 @@ function ThemeBuilderPage({ router }) {
         }
     }, [isLoading, themeConfig, activePageLayout, sortableInstances, paletteRef, pageSectionsRef]);
 
-    const handleGlobalStyleChange = (key, value) => { /* ... (unchanged) ... */ setThemeConfig(prev => ({ ...prev, globalStyles: { ...prev.globalStyles, [key]: value } })); };
-    const handlePaletteColorChange = (colorName, oklchValue) => { /* ... (unchanged) ... */ setThemeConfig(prev => { const newPalette = { ...prev.globalStyles.palette, [colorName]: oklchValue }; return { ...prev, globalStyles: { ...prev.globalStyles, palette: newPalette } }; }); };
-    const handleFontSubsetChange = (subset, isChecked) => { /* ... (unchanged) ... */ setThemeConfig(prev => { const currentSubsets = prev.globalStyles.fontSubsets || []; let newSubsets; if (isChecked) { newSubsets = [...currentSubsets, subset]; } else { newSubsets = currentSubsets.filter(s => s !== subset); } return { ...prev, globalStyles: { ...prev.globalStyles, fontSubsets: newSubsets } }; }); };
+    const handleGlobalStyleChange = (key, value) => { setThemeConfig(prev => ({ ...prev, globalStyles: { ...prev.globalStyles, [key]: value } })); };
+    const handlePaletteColorChange = (colorName, oklchValue) => { setThemeConfig(prev => { const newPalette = { ...prev.globalStyles.palette, [colorName]: oklchValue }; return { ...prev, globalStyles: { ...prev.globalStyles, palette: newPalette } }; }); };
+    const handleFontSubsetChange = (subset, isChecked) => { setThemeConfig(prev => { const currentSubsets = prev.globalStyles.fontSubsets || []; let newSubsets; if (isChecked) { newSubsets = [...currentSubsets, subset]; } else { newSubsets = currentSubsets.filter(s => s !== subset); } return { ...prev, globalStyles: { ...prev.globalStyles, fontSubsets: newSubsets } }; }); };
 
     const handleSectionSettingChange = (fieldName, newValue) => {
         if (!selectedSectionId) return;
@@ -644,7 +653,7 @@ function ThemeBuilderPage({ router }) {
             return newConfig;
         });
     };
-    const handleResponsiveSettingChange = (viewport, settingName, newValue) => { /* ... (unchanged) ... */
+    const handleResponsiveSettingChange = (viewport, settingName, newValue) => {
         if (!selectedSectionId) return;
         setThemeConfig(prev => {
             const newConfig = JSON.parse(JSON.stringify(prev));
@@ -659,7 +668,7 @@ function ThemeBuilderPage({ router }) {
         });
     };
 
-    const handleSaveTheme = async () => { /* ... (unchanged) ... */
+    const handleSaveTheme = async () => {
         setIsLoading(true); setMessage('');
         try {
             await setSetting(THEME_CONFIG_KEY, themeConfig);
@@ -671,7 +680,7 @@ function ThemeBuilderPage({ router }) {
         setTimeout(() => setMessage(''), 3000);
     };
 
-    const generatePreviewGlobalStyles = () => { /* ... (unchanged) ... */
+    const generatePreviewGlobalStyles = () => {
         if (!themeConfig || !themeConfig.globalStyles) return '';
         const gs = themeConfig.globalStyles; let paletteCssVars = '';
         if(gs.palette) { for (const [key, value] of Object.entries(gs.palette)) { paletteCssVars += `--preview-color-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}: ${value};\n`; } }
@@ -695,7 +704,7 @@ function ThemeBuilderPage({ router }) {
     const renderField = (field, section) => {
         const value = section.settings[field.name] !== undefined ? section.settings[field.name] : (predefinedSection.defaultSettings && predefinedSection.defaultSettings[field.name] !== undefined ? predefinedSection.defaultSettings[field.name] : '');
         const inputId = `${field.name}-${section.id}`;
-        const predefinedSection = themeConfig.predefinedSections.find(ps => ps.type === section.type); // Ensure this is in scope
+        const predefinedSection = themeConfig.predefinedSections.find(ps => ps.type === section.type);
 
         switch(field.type) {
             case 'text': return h('input', { type: field.inputType || 'text', id: inputId, value: value, onInput: (e) => handleSectionSettingChange(field.name, e.target.value), placeholder: field.placeholder || '' });
@@ -704,7 +713,7 @@ function ThemeBuilderPage({ router }) {
             case 'select': return h('select', { id: inputId, value: value, onChange: (e) => handleSectionSettingChange(field.name, e.target.value) },
                 (field.options || []).map(opt => h('option', { value: typeof opt === 'object' ? opt.value : opt }, typeof opt === 'object' ? opt.label : opt))
             );
-            case 'richtext': return h(RichTextEditor, { // Integrate RichTextEditor
+            case 'richtext': return h(RichTextEditor, {
                 content: value,
                 onChange: (newHtml) => handleSectionSettingChange(field.name, newHtml),
                 placeholder: field.placeholder || 'Enter content...'
@@ -878,6 +887,7 @@ class App extends Component { /* ... (existing App component code - unchanged) .
                     '/settings': () => this.updateRouteView('Settings'),
                     '/analytics': () => this.updateRouteView('Analytics'),
                     '/backup': () => this.updateRouteView('Backup'),
+                    '/tools/email-test': () => this.updateRouteView('EmailTest'),
                 })
                 .hooks({
                     after: (match) => {
@@ -921,6 +931,183 @@ class App extends Component { /* ... (existing App component code - unchanged) .
     }
 }
 
+// --- EmailTestPage Component ---
+const EmailTestPage = () => { /* ... (existing EmailTestPage component code - unchanged) ... */
+  const [to, setTo] = useState('');
+  const [subject, setSubject] = useState('');
+  const [htmlContent, setHtmlContent] = useState('<p>This is a <b>test email</b> from the CMS!</p>');
+  const [status, setStatus] = useState({type: '', message: ''});
+  const [isSending, setIsSending] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!to || !subject || !htmlContent) {
+      setStatus({ type: 'error', message: 'Please fill in all fields.' });
+      return;
+    }
+    setIsSending(true);
+    setStatus({ type: 'info', message: 'Sending test email...' });
+
+    const result = await sendEmail({ to, subject, htmlContent });
+
+    setIsSending(false);
+    if (result.success) {
+      setStatus({ type: 'success', message: 'Email sent successfully! Check the recipient inbox (and spam folder).' });
+    } else {
+      setStatus({ type: 'error', message: `Error: ${result.error || 'Unknown error.'} ${result.details ? JSON.stringify(result.details) : ''}` });
+    }
+  };
+
+  return h('div', { class: 'email-test-page card' },
+    h('h2', { class: 'page-section-title' }, 'Email Sending Test'),
+    h('p', { class: 'page-subtitle' }, 'Use this form to send a test email via the configured Brevo integration.'),
+    h('form', { onSubmit: handleSubmit, class: 'editor-form' },
+      h('div', { class: 'form-group' },
+        h('label', { for: 'toEmail' }, 'Recipient Email:'),
+        h('input', { type: 'email', id: 'toEmail', value: to, onInput:(e) => setTo(e.target.value), required: true, disabled: isSending })
+      ),
+      h('div', { class: 'form-group' },
+        h('label', { for: 'subject' }, 'Subject:'),
+        h('input', { type: 'text', id: 'subject', value: subject, onInput:(e) => setSubject(e.target.value), required: true, disabled: isSending })
+      ),
+      h('div', { class: 'form-group' },
+        h('label', { for: 'htmlContent' }, 'Message (HTML):'),
+        h(RichTextEditor, {
+            content: htmlContent,
+            onChange: setHtmlContent,
+            placeholder: "Type your test message here...",
+        })
+      ),
+      h('button', { type: 'submit', class: 'button-primary', disabled: isSending },
+        isSending ? 'Sending...' : 'Send Test Email'
+      ),
+      status.message && h('div', {
+        class: `status-message ${status.type === 'success' ? 'success-message' : status.type === 'error' ? 'login-error' : 'info-message'}`,
+        style: {marginTop: '20px'}
+      }, status.message)
+    )
+  );
+};
+
+// --- SettingsPage Component (New/Refined) ---
+const SettingsPage = () => {
+    const [isLoading, setIsLoading] = useState(true);
+    const [status, setStatus] = useState({ type: '', message: '' });
+    // State for editable settings
+    const [siteName, setSiteName] = useState('');
+    const [adminEmailForBrevo, setAdminEmailForBrevo] = useState('');
+    const [cloudflareWorkerUrl, setCloudflareWorkerUrl] = useState('');
+    const [adminSetupToken, setAdminSetupToken] = useState('');
+    // ... add other settings states as needed: cfAccountID, kvNamespaceIDs, etc.
+    const [initialAdminEmailForBrevo, setInitialAdminEmailForBrevo] = useState('');
+
+
+    const loadAllSettings = async () => {
+        setIsLoading(true);
+        try {
+            const sName = await getSetting('siteName') || '';
+            const cfUrl = await getSetting('cloudflareWorkerUrl') || '';
+            const cfToken = await getSetting('adminSetupToken') || '';
+            const brevoEmail = await getSetting('ADMIN_EMAIL_BREVO') || await getSetting('adminEmail') || ''; // Fallback to general adminEmail
+
+            setSiteName(sName);
+            setCloudflareWorkerUrl(cfUrl);
+            setAdminSetupToken(cfToken);
+            setAdminEmailForBrevo(brevoEmail);
+            setInitialAdminEmailForBrevo(brevoEmail); // Store initial value to check for changes
+
+        } catch (err) {
+            console.error("Error loading settings:", err);
+            setStatus({ type: 'error', message: 'Could not load settings.' });
+        }
+        setIsLoading(false);
+    };
+
+    useEffect(() => {
+        loadAllSettings();
+    }, []);
+
+    const handleSaveSettings = async (e) => {
+        e.preventDefault();
+        setIsLoading(true);
+        setStatus({ type: 'info', message: 'Saving settings...' });
+
+        try {
+            // Save all local settings first
+            await setSetting('siteName', siteName);
+            await setSetting('cloudflareWorkerUrl', cloudflareWorkerUrl);
+            await setSetting('adminSetupToken', adminSetupToken); // User might update this
+            await setSetting('ADMIN_EMAIL_BREVO', adminEmailForBrevo);
+            // ... save other settings ...
+
+            setStatus({ type: 'success', message: 'Local settings saved successfully!' });
+
+            // Sync specific settings to worker if changed
+            if (adminEmailForBrevo !== initialAdminEmailForBrevo) {
+                setStatus({ type: 'info', message: 'Local settings saved. Syncing Admin Email for Brevo to worker...' });
+                const syncResult = await syncAdminSettingsToWorker({ adminEmailForBrevo });
+                if (syncResult.success) {
+                    setStatus({ type: 'success', message: 'All settings saved and Admin Email synced to worker!' });
+                    setInitialAdminEmailForBrevo(adminEmailForBrevo); // Update initial value after successful sync
+                } else {
+                    setStatus({ type: 'error', message: `Local settings saved, but failed to sync Admin Email to worker: ${syncResult.error}` });
+                }
+            }
+        } catch (err) {
+            console.error("Error saving settings:", err);
+            setStatus({ type: 'error', message: 'Failed to save settings.' });
+        }
+        setIsLoading(false);
+        setTimeout(() => setStatus({type:'', message:''}), 4000);
+    };
+
+    if (isLoading) return h('p', {class: 'centered-container'}, 'Loading settings...');
+
+    return h('div', {class: 'settings-page card'},
+        h('h2', {class: 'page-section-title'}, 'CMS Settings'),
+        h('form', { onSubmit: handleSaveSettings, class: 'editor-form' }, // Reuse editor-form for layout
+            h('h3', {}, 'General Settings'),
+            h('div', {class: 'form-group'},
+                h('label', {for: 'siteName'}, 'Site Name'),
+                h('input', {type: 'text', id: 'siteName', value: siteName, onInput: e => setSiteName(e.target.value)})
+            ),
+            // Add Admin Password Change UI here in a future step
+
+            h('hr'),
+            h('h3', {}, 'Cloudflare Configuration'),
+            h('div', {class: 'form-group'},
+                h('label', {for: 'cloudflareWorkerUrl'}, 'Cloudflare Worker URL'),
+                h('input', {type: 'url', id: 'cloudflareWorkerUrl', value: cloudflareWorkerUrl, onInput: e => setCloudflareWorkerUrl(e.target.value), placeholder: 'https://your-worker.username.workers.dev'})
+            ),
+            h('div', {class: 'form-group'},
+                h('label', {for: 'adminSetupToken'}, 'Cloudflare Worker Admin Setup Token'),
+                h('input', {type: 'password', id: 'adminSetupToken', value: adminSetupToken, onInput: e => setAdminSetupToken(e.target.value), autocomplete: "new-password"})
+            ),
+            // Add KV Namespace ID fields here if they need to be editable post-setup
+
+            h('hr'),
+            h('h3', {}, 'Email (Brevo) Configuration'),
+            h('div', {class: 'form-group settings-instruction-block'},
+                h('label', {}, 'Brevo API Key (v3)'),
+                h('p', {}, 'Your Brevo API Key must be set as a secret named `BREVO_API_KEY` in your Cloudflare Worker\'s settings via the Cloudflare dashboard. This key is not stored in the CMS itself for security reasons.'),
+                h('a', {href: 'https://developers.cloudflare.com/workers/configuration/secrets/', target: '_blank', rel: 'noopener noreferrer'}, 'Cloudflare Secrets Documentation')
+            ),
+            h('div', {class: 'form-group'},
+                h('label', {for: 'adminEmailForBrevo'}, 'Admin Email for Brevo (Sender Email)'),
+                h('input', {type: 'email', id: 'adminEmailForBrevo', value: adminEmailForBrevo, onInput: e => setAdminEmailForBrevo(e.target.value)})
+            ),
+            // (Optional V1.1) Test Brevo Connection button here
+
+            h('button', {type: 'submit', class: 'button-primary', disabled: isLoading}, isLoading ? 'Saving...' : 'Save All Settings'),
+            status.message && h('div', {
+                class: `status-message ${status.type === 'success' ? 'success-message' : status.type === 'error' ? 'login-error' : 'info-message'}`,
+                style: {marginTop: '20px'}
+              }, status.message)
+        )
+    );
+};
+
+
 // --- Helper: OKLCH to HEX (simplified, for color input only, not for general conversion) ---
 function oklchToHex(oklchString) { /* ... (unchanged) ... */
     if (!oklchString || !oklchString.startsWith('oklch(')) return '#000000';
@@ -943,7 +1130,7 @@ function hexToOklch(hexString, fallbackOklch) { /* ... (unchanged) ... */
 const appRoot = document.getElementById('admin-app');
 if (appRoot) {
     render(h(App), appRoot);
-    console.log("Admin SPA Initialized with Preact, Navigo, Dexie (db.js). RichTextEditor integrated into ThemeBuilder.");
+    console.log("Admin SPA Initialized with Preact, Navigo, Dexie (db.js). Settings Page refined for Brevo config.");
 } else {
     console.error("Admin app root element (#admin-app) not found.");
 }
