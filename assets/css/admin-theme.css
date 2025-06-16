@@ -1,0 +1,563 @@
+/* CSS Variables for 'Vibrant Gradient & Glassmorphism' Style */
+:root {
+    --color-primary-gradient-start: oklch(65% 0.25 330); /* Magentaish */
+    --color-primary-gradient-end: oklch(60% 0.28 290);   /* Purpleish */
+    --color-primary-gradient: linear-gradient(105deg, var(--color-primary-gradient-start), var(--color-primary-gradient-end));
+
+    --color-accent-1: oklch(70% 0.22 250); /* Vibrant Blue/Purple for links, focus */
+    --color-accent-2: oklch(75% 0.26 150); /* Tealish Green for secondary actions/tags */
+    --color-danger: oklch(60% 0.23 25);   /* Reddish for error messages & delete */
+    --color-edit: oklch(65% 0.22 120);    /* Greenish for edit (can be same as success) */
+    --color-success: oklch(65% 0.22 150); /* Tealish Green, same as accent-2 for consistency */
+
+    --color-background-main: oklch(98% 0.005 270);
+    --color-background-glass: oklch(97% 0.01 270 / 0.55); /* Slightly more opaque, lighter base */
+    --color-background-glass-sidebar: oklch(97% 0.015 270 / 0.7);
+    --color-surface: oklch(100% 0 0);
+
+    --color-text-dark: oklch(20% 0.02 270);    /* Darker for better contrast */
+    --color-text-medium: oklch(40% 0.015 270);
+    --color-text-light: oklch(99% 0.005 270);
+    --color-text-on-primary: oklch(100% 0 0);
+    --color-error: var(--color-danger);
+
+    --font-family-headings: "Nunito Sans", "Helvetica Neue", Arial, sans-serif;
+    --font-family-body: "Roboto", "Helvetica Neue", Arial, sans-serif;
+
+    --blur-intensity: 6px; /* Slightly reduced for performance & sharper look */
+    --border-radius-standard: 10px; /* Standardized */
+    --border-radius-large: 16px;
+    --shadow-standard: 0 6px 24px 0 rgba(31, 38, 135, 0.07);
+    --shadow-interactive: 0 8px 28px 0 rgba(31, 38, 135, 0.1);
+    --border-glass: 1px solid oklch(90% 0.01 270 / 0.15); /* Even more subtle */
+    --transition-fast: all 0.2s ease-in-out;
+    --transition-medium: all 0.3s ease-in-out;
+}
+
+/* Basic Body Styling */
+body {
+    margin: 0;
+    font-family: var(--font-family-body);
+    background-color: var(--color-background-main);
+    color: var(--color-text-dark);
+    line-height: 1.6;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Main Admin App Root Element Styling */
+#admin-app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.admin-layout {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.main-container {
+    display: flex;
+    flex-grow: 1;
+}
+
+/* Centered container for loading, login, wizard */
+.centered-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    width: 100%;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.loading-container p {
+    font-size: 1.2em;
+    color: var(--color-text-medium);
+    font-family: var(--font-family-headings);
+}
+
+/* Header Styling */
+.admin-header {
+    height: 60px; /* Standard height */
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 25px;
+    background-color: var(--color-surface);
+    border-bottom: var(--border-glass);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.03); /* Softer shadow for header */
+    z-index: 1000; /* Ensure header is on top */
+}
+
+.admin-header .logo {
+    font-family: var(--font-family-headings);
+    font-size: 1.6em; /* Slightly larger */
+    font-weight: 900;
+    background: var(--color-primary-gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+.admin-header .logout-button {
+    font-family: var(--font-family-body);
+    font-weight: 600; /* Bolder */
+    padding: 8px 16px; /* Slightly more padding */
+    background-color: transparent;
+    color: var(--color-accent-1);
+    border: 1px solid var(--color-accent-1);
+    border-radius: var(--border-radius-standard);
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.admin-header .logout-button:hover, .admin-header .logout-button:focus {
+    background-color: var(--color-accent-1);
+    color: var(--color-text-on-primary);
+    box-shadow: 0 2px 10px oklch(var(--color-accent-1) / 0.3);
+    outline: none;
+}
+
+/* Sidebar Styling */
+.admin-sidebar {
+    width: 250px; /* Slightly wider */
+    padding: 20px;
+    background-color: var(--color-background-glass-sidebar);
+    -webkit-backdrop-filter: blur(var(--blur-intensity));
+    backdrop-filter: blur(var(--blur-intensity));
+    border-right: var(--border-glass);
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 60px);
+    overflow-y: auto;
+    transition: var(--transition-medium); /* For potential future collapse */
+}
+
+.admin-sidebar nav a {
+    display: flex; /* For icon alignment if added later */
+    align-items: center;
+    padding: 12px 18px;
+    text-decoration: none;
+    color: var(--color-text-medium); /* Slightly lighter for inactive links */
+    border-radius: var(--border-radius-standard);
+    margin-bottom: 8px;
+    font-weight: 600;
+    transition: var(--transition-fast);
+}
+
+.admin-sidebar nav a:hover {
+    background-color: oklch(0 0 0 / 0.04);
+    color: var(--color-text-dark);
+    transform: translateX(3px);
+}
+
+.admin-sidebar nav a.active {
+    background: var(--color-primary-gradient);
+    color: var(--color-text-on-primary);
+    font-weight: 700;
+    box-shadow: 0 5px 15px oklch(var(--color-primary-gradient-end) / 0.35);
+    transform: translateX(0);
+}
+
+.admin-sidebar nav a.active:hover { /* Keep active style on hover */
+    background: var(--color-primary-gradient);
+    color: var(--color-text-on-primary);
+}
+
+
+/* Content Area Styling */
+.admin-content-area {
+    flex-grow: 1;
+    padding: 30px; /* More padding */
+    overflow-y: auto;
+    background-color: var(--color-background-main);
+}
+
+.admin-content-area h1 {
+    font-size: 2em; /* Larger page titles */
+    color: var(--color-text-dark);
+    margin-top: 0;
+    margin-bottom: 25px;
+    border-bottom: 1px solid oklch(90% 0.01 270 / 0.7); /* More visible border */
+    padding-bottom: 15px;
+}
+
+/* Glassmorphism Utility Class */
+.glassmorphic {
+    background-color: var(--color-background-glass);
+    -webkit-backdrop-filter: blur(var(--blur-intensity));
+    backdrop-filter: blur(var(--blur-intensity));
+    border-radius: var(--border-radius-large); /* Larger radius for cards */
+    border: var(--border-glass);
+    box-shadow: var(--shadow-standard);
+}
+
+/* Login Page Specific Styles */
+.login-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    width: 100%;
+    background: var(--color-primary-gradient);
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.login-form { /* Uses .glassmorphic */
+    width: 100%;
+    max-width: 420px; /* Slightly wider */
+    padding: 40px; /* More padding */
+    text-align: center;
+    border-radius: var(--border-radius-large);
+}
+
+.login-title {
+    font-family: var(--font-family-headings);
+    font-size: 2.2em;
+    font-weight: 900;
+    color: var(--color-text-dark);
+    margin-bottom: 30px;
+}
+
+.login-input { /* Styles applied via global input styles now */
+    margin-bottom: 25px;
+}
+
+.login-button {
+    width: 100%;
+    padding: 14px 20px; /* Taller button */
+    font-size: 1.1em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.login-error, .wizard-error, .theme-builder-message.login-error {
+    color: var(--color-error);
+    background-color: oklch(var(--color-error) / 0.1);
+    border: 1px solid oklch(var(--color-error) / 0.3);
+    padding: 12px 15px; /* More padding */
+    border-radius: var(--border-radius-standard);
+    margin-bottom: 20px;
+    font-size: 0.95em;
+}
+
+.success-message {
+    color: var(--color-success);
+    background-color: oklch(var(--color-success) / 0.1);
+    border: 1px solid oklch(var(--color-success) / 0.3);
+    padding: 12px 15px;
+    border-radius: var(--border-radius-standard);
+    margin-bottom: 20px;
+    font-size: 0.95em;
+}
+
+/* Setup Wizard Specific Styles */
+.setup-wizard-container { /* Uses .centered-container */
+    background: var(--color-primary-gradient);
+}
+
+.setup-wizard-card { /* Uses .glassmorphic */
+    width: 100%;
+    max-width: 650px;
+    padding: 40px;
+    border-radius: var(--border-radius-large);
+}
+
+.wizard-title {
+    font-family: var(--font-family-headings);
+    font-size: 2.2em;
+    font-weight: 900;
+    color: var(--color-text-dark);
+    margin-bottom: 15px;
+    text-align: center;
+}
+
+.wizard-subtitle {
+    text-align: center;
+    color: var(--color-text-medium);
+    margin-bottom: 30px;
+    font-size: 1.05em;
+}
+
+.form-group {
+    margin-bottom: 22px;
+    text-align: left;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: var(--color-text-dark);
+    font-size: 0.95em;
+}
+
+.wizard-note {
+    font-size: 0.9em;
+    color: var(--color-text-medium);
+    margin-top: 20px;
+    margin-bottom: 30px;
+    text-align: center;
+    padding: 12px;
+    background-color: oklch(var(--color-accent-2) / 0.08);
+    border-radius: var(--border-radius-standard);
+    border: 1px solid oklch(var(--color-accent-2) / 0.2);
+}
+
+.wizard-button {
+    width: 100%;
+    padding: 14px 20px;
+    font-size: 1.1em;
+}
+
+/* Content List Page Styles */
+.content-list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px; /* More space */
+}
+
+.content-item-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.content-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding: 18px 22px;
+    transition: var(--transition-fast);
+}
+.content-item:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-interactive);
+}
+
+
+.content-item-title {
+    font-weight: 600; /* Bolder */
+    font-size: 1.15em;
+    color: var(--color-text-dark);
+}
+
+.content-item-actions button {
+    margin-left: 12px; /* More space */
+    padding: 9px 14px; /* Slightly larger */
+    font-size: 0.9em;
+    font-weight: 600;
+    border-radius: var(--border-radius-standard); /* Consistent radius */
+    transition: var(--transition-fast);
+}
+
+.button-edit {
+    background-color: var(--color-accent-2);
+    color: var(--color-text-on-primary);
+    border: none;
+}
+.button-edit:hover, .button-edit:focus {
+    background-color: oklch(from var(--color-accent-2) l calc(l - 7%)); /* Darken on hover */
+    box-shadow: 0 2px 8px oklch(var(--color-accent-2) / 0.4);
+    outline: none;
+}
+
+.button-delete {
+    background-color: var(--color-danger);
+    color: var(--color-text-on-primary);
+    border: none;
+}
+.button-delete:hover, .button-delete:focus {
+     background-color: oklch(from var(--color-danger) l calc(l - 7%)); /* Darken on hover */
+     box-shadow: 0 2px 8px oklch(var(--color-danger) / 0.4);
+     outline: none;
+}
+
+.no-content-message {
+    padding: 30px; /* More padding */
+    text-align: center;
+    color: var(--color-text-medium);
+    font-size: 1.1em;
+    border-radius: var(--border-radius-large); /* Consistent large radius */
+}
+
+/* Content Editor Page Styles */
+.editor-form {
+    padding: 20px;
+    background-color: var(--color-surface);
+    border-radius: var(--border-radius-large);
+    box-shadow: var(--shadow-standard);
+}
+.editor-form .form-group {
+    margin-bottom: 25px; /* More space between fields */
+}
+.editor-form textarea {
+    min-height: 250px;
+    resize: vertical;
+    line-height: 1.5;
+    font-size: 1em;
+}
+
+/* Theme Builder Page Styles */
+.theme-builder-page {
+    /* Uses general admin-content-area padding */
+}
+
+.theme-builder-layout {
+    display: flex;
+    gap: 30px; /* Increased gap */
+    flex-wrap: wrap;
+}
+
+.theme-controls-panel {
+    flex: 1;
+    min-width: 320px;
+    padding: 30px;
+    border-radius: var(--border-radius-large); /* Consistent large radius */
+}
+
+.theme-controls-panel h2 {
+    margin-top: 0;
+    font-size: 1.6em; /* Larger heading */
+    border-bottom: 1px solid oklch(90% 0.01 270 / 0.7);
+    padding-bottom: 15px;
+    margin-bottom: 25px;
+}
+
+.theme-preview-area {
+    flex: 2;
+    min-width: 320px;
+    padding: 30px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 350px;
+    border: 2px dashed oklch(85% 0.01 270 / 0.5); /* More prominent dashed border */
+    color: var(--color-text-medium);
+    border-radius: var(--border-radius-large); /* Consistent large radius */
+}
+
+.theme-preview-area h3 {
+    margin-top: 0;
+    color: var(--color-text-medium);
+    font-size: 1.3em;
+}
+
+.theme-control-preview {
+    margin-top: 25px;
+    padding: 20px;
+    border-radius: var(--border-radius-standard);
+    background-color: oklch(0 0 0 / 0.03);
+    transition: var(--transition-medium);
+}
+.theme-control-preview p {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-weight: 600;
+}
+
+
+/* Basic Button Styling */
+button, .button-primary { /* Apply base styles to all buttons for consistency */
+    border: none;
+    padding: 12px 22px; /* Standardized padding */
+    border-radius: var(--border-radius-standard);
+    font-family: var(--font-family-headings);
+    font-weight: 700;
+    cursor: pointer;
+    transition: var(--transition-fast);
+    box-shadow: var(--shadow-standard);
+}
+button:hover, .button-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-interactive);
+}
+button:focus-visible, .button-primary:focus-visible { /* Modern focus indication */
+    outline: 3px solid oklch(var(--color-accent-1) / 0.5);
+    outline-offset: 2px;
+}
+
+.button-primary {
+    background: var(--color-primary-gradient);
+    color: var(--color-text-on-primary);
+}
+.button-primary:hover { /* Gradient shift on hover for primary */
+     background: linear-gradient(105deg, oklch(from var(--color-primary-gradient-start) l calc(l + 3%)), oklch(from var(--color-primary-gradient-end) l calc(l + 3%)));
+}
+
+
+/* Input Styling */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="url"],
+input[type="color"],
+select,
+textarea {
+    font-family: var(--font-family-body);
+    padding: 12px 15px;
+    border: 1px solid oklch(88% 0.01 270 / 0.8); /* Slightly more visible default border */
+    border-radius: var(--border-radius-standard); /* Consistent radius */
+    background-color: oklch(100% 0 0 / 0.9);
+    color: var(--color-text-dark);
+    transition: var(--transition-fast);
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 1em;
+}
+input[type="color"] {
+    padding: 5px;
+    height: 48px; /* Match other inputs roughly */
+    max-width: 150px;
+}
+select {
+    appearance: none; /* Remove default system appearance */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23333'%3E%3Cpath d='M7 10l5 5 5-5H7z'/%3E%3C/svg%3E"); /* Basic SVG arrow */
+    background-repeat: no-repeat;
+    background-position: right 15px center;
+    background-size: 1.2em;
+    padding-right: 40px; /* Space for arrow */
+}
+
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="url"]:focus,
+input[type="color"]:focus,
+select:focus,
+textarea:focus {
+    outline: none;
+    border-color: var(--color-accent-1);
+    box-shadow: 0 0 0 3px oklch(var(--color-accent-1) / 0.3);
+}
+
+/* Global link styling */
+a {
+    color: var(--color-accent-1);
+    text-decoration: none;
+    transition: var(--transition-fast);
+    font-weight: 500;
+}
+
+a:hover {
+    color: var(--color-primary-gradient-start);
+    text-decoration: underline; /* Add underline on hover for clarity */
+}
+
+/* Card style for general use */
+.card {
+    background-color: var(--color-surface);
+    border-radius: var(--border-radius-large); /* Use larger radius for cards */
+    box-shadow: var(--shadow-standard);
+    padding: 25px; /* More padding for cards */
+}
