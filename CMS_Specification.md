@@ -48,14 +48,14 @@ The CMS consists of several key components that interact to provide a seamless e
 *   **Frontend (Live Site) & Cloudflare Worker:**
     *   The live website (e.g., `index.html`, `blog/my-post.html`) consists of the statically generated files.
     *   A **Cloudflare Worker** acts as a lightweight, serverless backend layer that enhances the functionality of the static site. Its roles include:
-        *   **Serving Dynamic Data:** For features not suitable for static generation, such as real-time comment display (if implemented) or personalized content snippets. The primary plan focuses on using Cloudflare KV for visitor data like analytics or non-real-time interactions.
+        *   **Serving Dynamic Data:** For features not suitable for static generation, such as real-time comment display (if implemented) or personalized content snippets. The primary plan focuses on using Cloudflare KV for visitor data like form submissions and basic analytics.
         *   **API Request Proxying:** Securely proxying requests from the frontend to third-party APIs such as OpenAI (for content generation), Gemini (for AI features), Stripe (for payments), DocuSign (for e-signatures), and Brevo (for email marketing). This protects API keys and allows for rate limiting or request modification.
-        *   **Form Submissions & Visitor Interactions:** Receiving data from forms (e.g., contact forms, newsletter sign-ups) and other visitor interactions. This data is then stored in **Cloudflare KV** or processed by other services via the worker.
+        *   **Form Submissions & Visitor Interactions:** Receiving data from forms (e.g., contact forms, newsletter sign-ups) and other visitor interactions (like page views for basic analytics). This data is then stored in **Cloudflare KV** or processed by other services via the worker.
 
 *   **Build/Publish Process:**
     *   When an administrator clicks the "Publish" button in the admin panel:
         1.  The CMS reads the content and configurations from the client-side database (Dexie.js/SQL.js).
-        2.  It uses the selected theme and templates to generate static HTML files for each page and post.
+        2.  It uses the selected theme and templates to generate static HTML files for each page and post. If enabled, corresponding JSON files containing structured content are also generated.
         3.  CSS (potentially processed and purged) and JavaScript assets (including components for interactive elements if any) are also generated or copied.
         4.  A sitemap (e.g., `sitemap.xml`) is generated or updated to improve SEO.
         5.  Relevant SEO meta tags (titles, descriptions, canonical URLs, Open Graph tags) are embedded into the HTML files.
@@ -71,6 +71,27 @@ The CMS consists of several key components that interact to provide a seamless e
         *   **Push Notifications (Potential, if applicable):** For delivering notifications to users if this feature is part of the CMS's scope.
 
 This component interaction model creates a robust and flexible CMS that leverages the power of modern browser capabilities and serverless edge computing to deliver a high-performance, secure, and scalable solution.
+
+### 4. Backup and Restore Strategy
+
+Given that all site content, theme configurations, and settings are stored within the administrator's browser database (`db.js`), a robust backup strategy is essential.
+
+*   **Manual Export (Primary Backup):**
+    *   The primary method for backing up site data is through a manual export feature available in the admin panel.
+    *   This feature allows the administrator to download a comprehensive JSON file or a ZIP archive containing all data from `db.js`. This includes posts, pages, theme settings, plugin configurations, and any other data managed by the CMS.
+    *   Users are encouraged to perform this export regularly and store the backup file securely in a separate location.
+
+*   **Automated Backup Reminder System:**
+    *   To promote regular backups without enforcing automated remote storage (which could introduce complexity and dependencies), an automated reminder system will be implemented.
+    *   **Last Backup Timestamp:** The `admin.js` module will record a timestamp in `db.js` each time a successful manual backup (export) is performed.
+    *   **Configurable Interval:** A setting within the admin panel (e.g., under "Settings" > "Backup") will allow the administrator to define a backup reminder interval (e.g., in days, defaulting to 7 days).
+    *   **Reminder Notification:** If the time elapsed since the last successful backup exceeds the configured interval, a non-intrusive notification or reminder will be displayed prominently on the admin dashboard. This reminder will prompt the user to perform a manual backup.
+    *   This system helps ensure data durability by encouraging good backup practices, aligning with the CMS's principles of user control and operational simplicity.
+
+*   **Restore Process (High-Level):**
+    *   Restoring the site would involve the administrator using a "Restore from Backup" feature in the admin panel.
+    *   The user would select a previously downloaded backup file (JSON/ZIP).
+    *   The admin panel would then parse this file and use its contents to repopulate the client-side database (`db.js`), effectively restoring the site to the state captured in that backup. This process would overwrite existing data in the browser's storage for the CMS.
 
 ---
 ## File and Folder Structure
@@ -148,7 +169,7 @@ This directory contains all static assets used by both the frontend site and the
     *   Other files could include PicoCSS or purged Tailwind CSS outputs.
 *   **`assets/js/`**:
     *   **Purpose:** Contains all JavaScript files.
-    *   `main.js`: Core JavaScript for the frontend visitor-facing site. Handles dynamic content loading (if applicable), interactivity, and integration with the Cloudflare Worker for dynamic features.
+    *   `main.js`: Core JavaScript for the frontend visitor-facing site. Handles dynamic content loading (if applicable), interactivity, integration with the Cloudflare Worker for dynamic features, and sends page view pings for basic analytics.
     *   `admin.js`: Core JavaScript for the admin panel SPA. Manages UI interactions, state, routing, and communication with `db.js` and `builder.js`.
     *   `db.js`: Handles client-side database initialization (Dexie.js for IndexedDB or SQL.js via WASM) and all CRUD operations for content, settings, and configurations stored in the browser.
     *   `seo.js`: Contains logic for generating SEO-related elements such as meta tags, JSON-LD structured data, and potentially triggers sitemap generation. Used by the build/publish process.
@@ -193,11 +214,25 @@ This directory contains all static assets used by both the frontend site and the
     *   Contents include: site name, admin user credentials (e.g., username and a hashed password), chosen theme identifier, the URL of the deployed Cloudflare Worker (once known), and placeholders for API keys like Brevo (which the admin would fill in via the admin panel, not by editing this file directly).
     *   **Security Note:** Sensitive keys should ideally be managed as environment variables in the deployment environment (e.g., Cloudflare Worker settings) rather than being stored directly in a file in the repository, even if it's just a placeholder. This file might store references or indicate if a key is expected.
 *   **`schemas.json`**:
-    *   **Purpose:** Defines the structure and validation rules for different content types (e.g., "Article", "Product", "Page", "Testimonial").
+    *   **Purpose:** Defines the structure and validation rules for different content types (e.g., "Article", "Product", "Page", "Testimonial"). Users can define their own schemas here to customize content structures.
     *   This JSON file will contain schemas (potentially using a format like JSON Schema) that the admin panel uses to:
         *   Dynamically generate input forms in the content editor.
         *   Validate content upon submission.
         *   Guide the `builder.js` and templating engine on how to render different content types.
+    *   **Example `Product` schema snippet:**
+        ```json
+        {
+          "Product": {
+            "fields": [
+              { "name": "productName", "type": "text", "label": "Product Name", "required": true },
+              { "name": "price", "type": "number", "label": "Price", "required": true },
+              { "name": "description", "type": "textarea", "label": "Description" },
+              { "name": "sku", "type": "text", "label": "SKU" },
+              { "name": "inStock", "type": "checkbox", "label": "In Stock" }
+            ]
+          }
+        }
+        ```
 
 This structure provides a solid foundation for building a modular and scalable CMS, separating concerns and making it easier to locate and manage different aspects of the application.
 
@@ -218,9 +253,10 @@ This section details the purpose and primary functionalities of each key JavaScr
     *   Manages dynamic content updates or interactive elements on the page (e.g., image carousels, simple form submissions not requiring worker interaction).
     *   Initiates the registration of the service worker by calling functions from `sw-registrar.js`.
     *   Handles user interactions and events on the frontend.
+    *   **Sends a lightweight, asynchronous `fetch` request to the `/track-view` endpoint on the Cloudflare Worker upon page load or route change (for SPA behavior). This request will include the current page path for basic page view analytics.**
 *   **Interactions:**
     *   `sw-registrar.js`: To register the service worker.
-    *   `cloudflare/worker.js` (via fetch): For any dynamic data or actions needed by the live site that aren't pre-rendered.
+    *   `cloudflare/worker.js` (via fetch): For any dynamic data or actions needed by the live site that aren't pre-rendered, and for sending page view data.
     *   `/templates/`: Consumes HTML templates for rendering.
 *   **General Notes:** This module will be lightweight, especially if the site is mostly statically generated. Its complexity increases if a full SPA approach is chosen for the frontend.
 
@@ -236,12 +272,13 @@ This section details the purpose and primary functionalities of each key JavaScr
     *   Allows administrators to update site settings (e.g., site name, theme choice), which are then saved via `db.js`.
     *   Integrates with `builder.js` to provide theme customization capabilities.
     *   Manages the "Publish" action, which involves:
-        *   Triggering static HTML/CSS/JS file generation logic (potentially in a web worker or coordinated with `builder.js` and `seo.js`).
+        *   Triggering static HTML/CSS/JS file generation logic (potentially in a web worker or coordinated with `builder.js` and `seo.js`). This includes generating JSON files for content if enabled.
         *   Invoking `seo.js` to generate sitemaps and necessary SEO metadata.
         *   Coordinating the deployment or update of files to the hosting platform (e.g., via Cloudflare Pages API or Git).
     *   Handles client-side routing within the admin panel (e.g., using Navigo).
     *   Interacts with `ai.js` to provide AI-assisted content creation or suggestions.
     *   Interacts with `email.js` for configuring email settings or viewing form submissions (if stored).
+    *   Provides UI for viewing basic analytics data fetched from the Cloudflare Worker.
 *   **Interactions:**
     *   `db.js`: For all data storage and retrieval.
     *   `builder.js`: For theme editing and preview.
@@ -249,7 +286,7 @@ This section details the purpose and primary functionalities of each key JavaScr
     *   `ai.js`: For AI-powered assistance.
     *   `email.js`: For email-related configurations or data.
     *   `plugin-loader.js`: To enable plugin functionalities within the admin UI.
-    *   `cloudflare/worker.js` (via fetch): For actions like triggering deployment, fetching external data, or authentication.
+    *   `cloudflare/worker.js` (via fetch): For actions like triggering deployment, fetching external data, authentication, and retrieving analytics data.
 *   **General Notes:** This is the largest and most complex client-side module.
 
 ---
@@ -280,10 +317,11 @@ This section details the purpose and primary functionalities of each key JavaScr
     *   Creates JSON-LD structured data snippets (e.g., for `Article`, `Product`, `WebSite`, `Organization`) based on content and site settings.
     *   Prepares the data structure (list of URLs, last modified dates) required for generating the `sitemap.xml` file. The actual XML file generation might occur via a utility function or within the main publish process coordinated by `admin.js`.
     *   Provides functions to embed SEO data into page templates during the static site generation process.
+    *   Provides functions to extract structured content (without theme markup) for JSON file generation.
 *   **Interactions:**
     *   `admin.js`: Invoked during the publish process and content saving.
     *   `db.js`: Reads content and settings to generate relevant SEO data.
-*   **General Notes:** Focuses on preparing SEO data; the actual file writing (for sitemap) or HTML embedding is coordinated by other modules involved in the build process.
+*   **General Notes:** Focuses on preparing SEO data; the actual file writing (for sitemap, HTML, JSON) or HTML embedding is coordinated by other modules involved in the build process.
 
 ---
 
@@ -414,7 +452,7 @@ This section describes the user's journey and key interactions within the `/admi
         *   Quick links to common actions (e.g., "Create New Page," "Edit Homepage," "Customize Theme").
     *   **Visitor Data Highlights:**
         *   Displays a count of new form submissions or comments (data synced periodically from Cloudflare KV via the Cloudflare Worker and stored/cached in `db.js`).
-        *   (Optional) A mini-chart from `uPlot` showing recent visitor trends if basic analytics are captured.
+        *   (Optional) A mini-chart from `uPlot` showing recent visitor trends or page views if basic analytics are captured and retrieved.
 
 ---
 
@@ -444,7 +482,7 @@ This section describes the user's journey and key interactions within the `/admi
     *   `admin.js` collects form data.
     *   Data is validated against the schema (if applicable) and then saved to `db.js`.
     *   If "Save & Publish" is clicked:
-        *   The system initiates the publish process: `seo.js` is used to generate metadata, static files are (conceptually) generated based on templates and the new content.
+        *   The system initiates the publish process: `seo.js` is used to generate metadata, static files (HTML and JSON if enabled) are (conceptually) generated based on templates and the new content.
         *   The status of the content is updated to "Published."
         *   (Further details in a dedicated "Publishing Flow" if needed, but this is the initiation point).
     *   User is redirected to the content list or stays on the edit page with a success message.
@@ -506,15 +544,19 @@ This section describes the user's journey and key interactions within the `/admi
     *   Site name is saved to `db.js`.
     *   For password change: Current password is hashed and verified. New password is hashed and updated in `db.js`.
 *   **User Action (Cloudflare Worker Setup):**
-    *   Enters Cloudflare Account ID, KV Namespace ID for visitor data.
+    *   Enters Cloudflare Account ID, KV Namespace ID for visitor data, and KV Namespace ID for analytics.
     *   **Worker Deployment:**
         *   **Guidance Method (Simplest):** Sees instructions to manually copy the content of `/cloudflare/worker.js` (provided or viewable in the UI) and paste it into the Cloudflare dashboard for a new Worker.
         *   **API Key Input:** Enters API keys for OpenAI, Gemini, Stripe, DocuSign, Brevo.
 *   **System Response (Cloudflare Worker Setup):**
-    *   Account ID, KV Namespace ID are saved to `db.js` for reference or use by `admin.js` when constructing links or instructions.
+    *   Account ID, KV Namespace IDs are saved to `db.js` for reference or use by `admin.js` when constructing links or instructions.
     *   **API Key Handling:** When API keys are entered, `admin.js` makes a secure `fetch` request to a *setup* endpoint on the (already manually deployed) Cloudflare Worker. The Worker then saves these keys securely within its own settings or a separate, more secure KV namespace, NOT directly in the client-accessible `db.js`. The client only needs to know if they've been set.
 *   **User Action (Email Settings):** Enters the admin email address where notifications from form submissions (via Brevo) should be sent.
 *   **System Response (Email Settings):** The email address is saved to `db.js`. This email will be passed to the Cloudflare Worker when configuring Brevo or sending emails.
+*   **User Action (Content Output Settings):**
+    *   Finds a setting typically under a "Publishing" or "Advanced Settings" tab, labeled "Enable JSON Output for Content" or similar. This setting will be a toggle switch, defaulting to "Enabled".
+    *   **User Action:** Toggles the switch to enable or disable the generation of `.json` files for each piece of content.
+*   **System Response (Content Output Settings):** The boolean value of this setting is saved to `db.js`. The "Publish" process will consult this setting: if disabled, `.json` files for individual content items will not be generated.
 *   **User Action:** Clicks "Save Settings."
 *   **System Response:** All changed settings are validated and saved by `admin.js` to `db.js` or handled as described for API keys. A success message is displayed.
 
@@ -531,6 +573,49 @@ This section describes the user's journey and key interactions within the `/admi
         *   Pagination is implemented if the dataset is large.
         *   Simple filtering options might be available (e.g., filter by form name, date range).
         *   Option to delete individual entries (sends a request to the Worker to remove it from KV).
+
+---
+
+### 8. Backup & Restore
+
+This flow describes how users can back up their site data and restore it.
+
+*   **User Action (Navigate to Backup/Restore):** Navigates to a "Backup & Restore" section, likely under "Settings" or as a top-level item.
+*   **System Response:** Displays the backup and restore interface.
+    *   **"Backup Now" Button:** A prominent button labeled "Backup Site Data" or "Export Full Site."
+        *   **User Action:** Clicks the "Backup Now" button.
+        *   **System Response:** `admin.js` triggers `db.js` to export all its data (content, settings, themes, plugin configs/code) into a single JSON file or a ZIP archive (containing JSON for data and potentially separate files for uploaded assets like plugin code if not directly in JSON). The browser then initiates a download of this file for the user. Upon successful completion, the "Last Backup Date" is updated.
+    *   **Last Backup Date Display:** Shows the timestamp of the last successful manual backup (read from `db.js`). If no backup has been made, it might display "Never" or "No backup recorded."
+    *   **Backup Reminder Interval Configuration:**
+        *   An input field (e.g., number input for days) labeled "Backup Reminder Interval (days):".
+        *   **User Action:** User enters a number (e.g., 7, 14, 30) and saves the setting.
+        *   **System Response:** The interval value is saved into `db.js`.
+    *   **Dashboard Reminder Notification:**
+        *   If a backup is due based on the "Last Backup Date" and the "Backup Reminder Interval," a non-intrusive notification appears on the main Dashboard Overview. Example: "Your last backup was 8 days ago. Consider creating a new backup." This notification would link to the Backup & Restore section.
+*   **User Action (Restore from Backup - High-Level):**
+    *   A "Restore from Backup" button or file input field.
+    *   **User Action:** User clicks the button and selects a previously downloaded backup file (JSON/ZIP) from their local system.
+    *   **System Response (High-Level):**
+        *   The admin panel parses the selected file.
+        *   A confirmation dialog appears, warning the user that restoring will overwrite all current data.
+        *   If confirmed, `admin.js` and `db.js` work to clear the existing database and repopulate it with the data from the backup file.
+        *   After completion, the admin panel re-initializes to reflect the restored state.
+
+---
+
+### 9. Basic Analytics Viewing
+
+This flow describes how administrators can view basic page view analytics.
+
+*   **User Action:** Navigates to an "Analytics" or "Site Traffic" section in the admin menu.
+*   **System Response:**
+    *   `admin.js` makes an authenticated request to the Cloudflare Worker (e.g., to `/get-analytics-data` or a parameter on `/get-visitor-data`).
+    *   The Worker retrieves page view data from the `ANALYTICS_KV` namespace (e.g., a list of page paths and their view counts).
+    *   The admin panel displays this data, typically in a list or tabular format:
+        *   **Page Path:** The path of the visited page.
+        *   **View Count:** The number of views recorded for that path.
+    *   **Simple Sorting:** The list may be sortable by "Page Path" or "View Count" (most/least viewed).
+    *   **No Advanced Filtering/Date Ranges (V1):** For V1, the analytics will be basic cumulative counts. More advanced filtering, date ranges, or unique visitor tracking are beyond the initial scope but could be considered for future enhancements.
 
 These flows describe the primary administrative interactions, focusing on a client-side driven experience with the Cloudflare Worker handling backend tasks and secure operations.
 
@@ -585,6 +670,10 @@ This section defines the internal organization, request flows, and logic of the 
       } else if (path === '/sync-data' && method === 'POST') { // Generic data sync
         return handleGenericDataSync(request, env);
       }
+      // Analytics Route
+      else if (path === '/track-view' && (method === 'POST' || method === 'GET')) { // Allow GET for beacon/pixel style if needed
+        return handleTrackView(request, env);
+      }
 
       // Configuration Route (Admin Only)
       else if (path === '/setup-config' && method === 'POST') {
@@ -592,9 +681,13 @@ This section defines the internal organization, request flows, and logic of the 
       }
 
       // Visitor Data Retrieval (Admin Only)
-      else if (path === '/get-visitor-data' && method === 'GET') {
+      else if (path === '/get-visitor-data' && method === 'GET') { // Also used for analytics for now
         return handleGetVisitorData(request, env); // Needs robust security
       }
+      // else if (path === '/get-analytics-data' && method === 'GET') { // Dedicated analytics endpoint if preferred
+      //   return handleGetAnalyticsData(request, env); // Needs robust security
+      // }
+
 
       return new Response(JSON.stringify({ success: false, error: 'Not Found' }), {
         status: 404,
@@ -770,85 +863,113 @@ A generic structure will be used for proxying requests to third-party APIs.
 ### 5. Visitor Data Handling
 
 *   **`/submit-form` and `/sync-data` Endpoints:**
-    *   **Purpose:** To receive and store data from frontend interactions (e.g., contact forms, comments).
+    *   **Purpose:** To receive and store data from frontend interactions (e.g., contact forms, comments, cart data).
     *   **Functionality:**
         1.  Receive `POST` request with JSON data.
         2.  Perform basic validation and sanitization on the data.
-        3.  Generate a unique key for KV storage (e.g., `form_submission:<form_name>:<timestamp_random_id>`).
-        4.  Store the JSON stringified data in the `env.VISITOR_DATA_KV` namespace, potentially with metadata.
+        3.  Generate a unique key for KV storage (e.g., `form_submission:<form_name>:<timestamp_random_id>`, `cart_data:<user_session_id>`).
+        4.  Store the JSON stringified data in the designated Cloudflare KV namespace (e.g., `VISITOR_DATA_KV`).
         5.  Return a success/failure JSON response.
     ```javascript
-    async function handleFormSubmission(request, env) {
+    async function handleFormSubmission(request, env) { // Can be generalized for other data like carts
       try {
         const data = await request.json();
         // Example validation: ensure essential fields exist
-        if (!data.email || !data.message || !data.formName) {
-            return new Response(JSON.stringify({ success: false, error: 'Missing required fields (formName, email, message).' }), { status: 400 });
-        }
+        // if (!data.email || !data.message || !data.formName) {
+        //     return new Response(JSON.stringify({ success: false, error: 'Missing required fields (formName, email, message).' }), { status: 400 });
+        // }
 
         // Sanitize data if necessary (e.g., using a simple HTML stripper for certain fields)
 
         const uniqueId = `${new Date().getTime()}-${Math.random().toString(36).substring(2, 11)}`;
-        const key = `form_submission:${data.formName}:${uniqueId}`;
+        // Example: const key = `form_submission:${data.formName}:${uniqueId}`;
+        // Example for cart: const key = `cart:${data.sessionId || uniqueId}`;
+        const dataType = data.type || 'generic_submission'; // e.g. 'form', 'cart', 'comment'
+        const key = `${dataType}:${data.identifier || uniqueId}`;
 
-        await env.VISITOR_DATA_KV.put(key, JSON.stringify(data), {
-          metadata: { submittedAt: new Date().toISOString(), type: 'formSubmission', formName: data.formName }
+
+        await env.VISITOR_DATA_KV.put(key, JSON.stringify(data.payload || data), { // Store actual payload
+          metadata: { submittedAt: new Date().toISOString(), type: dataType, identifier: data.identifier }
         });
 
-        return new Response(JSON.stringify({ success: true, message: 'Form submitted successfully.', id: key }), {
+        return new Response(JSON.stringify({ success: true, message: 'Data submitted successfully.', id: key }), {
           headers: { 'Content-Type': 'application/json' },
         });
       } catch (error) {
-        console.error('Form Submission Error:', error.message);
-        return new Response(JSON.stringify({ success: false, error: 'Error processing form submission.' }), { status: 500 });
+        console.error('Data Submission Error:', error.message);
+        return new Response(JSON.stringify({ success: false, error: 'Error processing data submission.' }), { status: 500 });
       }
     }
-    // handleGenericDataSync would be similar, potentially with different keying strategies or data structures.
+    // handleGenericDataSync would be similar.
+    ```
+*   **`/track-view` Endpoint (Basic Analytics):**
+    *   **Purpose:** To track page views for basic analytics.
+    *   **Method:** `POST` (or `GET` with query params if using beacon API for instance).
+    *   **Functionality:**
+        1.  Receives the page path (e.g., from request body: `{ path: "/about-us" }`).
+        2.  Sanitizes/normalizes the path.
+        3.  Retrieves the current count for the path from `ANALYTICS_KV`. If it doesn't exist, initializes to 0.
+        4.  Increments the count. Cloudflare KV stores values as strings, so ensure proper number conversion if doing atomic increments or read-modify-write. For simplicity, a read, increment, then write is acceptable for basic analytics. Atomic increments are better if available and simple.
+        5.  Stores the new count back into `ANALYTICS_KV` for that path.
+        6.  Returns a success response (e.g., 204 No Content or simple JSON success).
+        7.  **Privacy:** This endpoint will not log IP addresses, user agent strings, or set/read any cookies. It's purely for aggregated page view counts.
+    ```javascript
+    async function handleTrackView(request, env) {
+      try {
+        let pagePath;
+        if (request.method === 'POST') {
+          const body = await request.json();
+          pagePath = body.path;
+        } else { // GET
+          const url = new URL(request.url);
+          pagePath = url.searchParams.get('path');
+        }
+
+        if (!pagePath || typeof pagePath !== 'string') {
+          return new Response(JSON.stringify({ success: false, error: 'Page path is required.' }), { status: 400 });
+        }
+
+        // Normalize path: remove leading/trailing slashes, ensure it starts with a slash
+        pagePath = `/${pagePath.replace(/^\/+|\/+$/g, '')}`;
+
+        const kvKey = `view:${pagePath}`;
+        let currentViews = await env.ANALYTICS_KV.get(kvKey);
+        currentViews = currentViews ? parseInt(currentViews) : 0;
+
+        await env.ANALYTICS_KV.put(kvKey, (currentViews + 1).toString());
+
+        return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' }});
+      } catch (error) {
+        console.error('Track View Error:', error.message);
+        // For a tracking pixel, a 204 No Content or a small image response might be more appropriate on error too.
+        return new Response(JSON.stringify({ success: false, error: 'Error tracking view.' }), { status: 500 });
+      }
+    }
     ```
 *   **`/get-visitor-data` Endpoint (Admin Access):**
-    *   **Purpose:** Allows the admin panel to fetch stored visitor data from KV.
+    *   **Purpose:** Allows the admin panel to fetch stored visitor data from KV (form submissions, comments).
     *   **Security:** Must be secured similarly to `/setup-config` (e.g., require `env.ADMIN_SETUP_TOKEN`).
     *   **Functionality:**
         *   Accepts query parameters for filtering (e.g., `?prefix=form_submission:contact_form`, `?limit=10`, `?cursor=...`).
         *   Uses `env.VISITOR_DATA_KV.list({ prefix, limit, cursor })`.
         *   Returns a list of data entries (keys and values) and a new cursor for pagination.
+*   **`/get-analytics-data` Endpoint (Admin Access - Alternative/Dedicated):**
+    *   If `/get-visitor-data` becomes too broad, a dedicated endpoint for analytics could be created.
+    *   **Purpose:** Allows the admin panel to fetch page view counts from `ANALYTICS_KV`.
+    *   **Security:** Secured with `env.ADMIN_SETUP_TOKEN`.
+    *   **Functionality:**
+        *   Lists all keys from `ANALYTICS_KV` (or uses prefixes if paths are structured further).
+        *   Retrieves values (counts) for each key.
+        *   Returns a JSON object or array mapping page paths to view counts.
     ```javascript
-    async function handleGetVisitorData(request, env) {
-        const authHeader = request.headers.get('Authorization');
-        if (!authHeader || authHeader !== `Bearer ${env.ADMIN_SETUP_TOKEN}`) {
-          return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401 });
-        }
-
-        const url = new URL(request.url);
-        const prefix = url.searchParams.get('prefix') || undefined; // KV list allows empty prefix
-        const limit = parseInt(url.searchParams.get('limit')) || 100; // Default limit
-        const cursor = url.searchParams.get('cursor') || undefined;
-
-        try {
-            const listResults = await env.VISITOR_DATA_KV.list({ prefix, limit, cursor });
-            const dataEntries = [];
-
-            // For smaller datasets, fetching values individually is okay.
-            // For larger/frequent access, consider structuring data to minimize reads.
-            for (const key of listResults.keys) {
-                const value = await env.VISITOR_DATA_KV.get(key.name);
-                if (value) {
-                    dataEntries.push({ key: key.name, value: JSON.parse(value), metadata: key.metadata });
-                }
-            }
-            return new Response(JSON.stringify({
-                success: true,
-                data: dataEntries,
-                cursor: listResults.cursor,
-                list_complete: listResults.list_complete
-            }), {
-                headers: { 'Content-Type': 'application/json' },
-            });
-        } catch (error) {
-            console.error('Get Visitor Data Error:', error.message);
-            return new Response(JSON.stringify({ success: false, error: 'Error fetching visitor data.'}), { status: 500 });
-        }
-    }
+    // Example for handleGetVisitorData or a new handleGetAnalyticsData
+    // This part would be inside the existing handleGetVisitorData or a new function:
+    // ...
+    // if (dataType === 'analytics') { // Assuming a query param like ?type=analytics
+    //   const listResults = await env.ANALYTICS_KV.list({ prefix: 'view:', limit, cursor });
+    //   // ... fetch values and format as { path: count }
+    // }
+    // ...
     ```
 
 ---
@@ -866,15 +987,16 @@ A generic structure will be used for proxying requests to third-party APIs.
 ### 7. Configuration (via `env` and KV)
 
 *   **KV Namespace Bindings (in `wrangler.toml` or Cloudflare Dashboard):**
-    *   `VISITOR_DATA_KV`: For form submissions, comments, etc.
+    *   `VISITOR_DATA_KV`: For form submissions, comments, generic sync data (can include cart data).
     *   `CONFIG_KV`: For general configurations like admin email, site name.
+    *   `ANALYTICS_KV`: For storing page view counts.
 *   **Secret Bindings (Environment Variables in Worker settings):**
     *   `OPENAI_API_KEY`
     *   `GEMINI_API_KEY`
     *   `STRIPE_API_KEY`
     *   `DOCUSIGN_API_KEY`
     *   `BREVO_API_KEY`
-    *   `ADMIN_SETUP_TOKEN` (for securing `/setup-config` and `/get-visitor-data` endpoints).
+    *   `ADMIN_SETUP_TOKEN` (for securing `/setup-config` and `/get-visitor-data` / `/get-analytics-data` endpoints).
     *   `CLIENT_WORKER_SECRET` (optional, for simple client-to-worker auth on proxy calls).
 *   **Configurations stored in `CONFIG_KV` (set via `/setup-config`):**
     *   `ADMIN_EMAIL_BREVO`: The 'from' email address for emails sent via Brevo.
@@ -1248,7 +1370,7 @@ Upon the first visit to the `/admin` URL, or if the system detects that essentia
     3.  **Configure Admin Email:**
         *   Input field for the administrator's email address. This email will be used as the default "from" address for emails sent via Brevo (through the Cloudflare Worker) for things like form submission notifications.
     4.  **Cloudflare Worker Configuration:** This is a crucial step for enabling dynamic functionalities.
-        *   **Cloudflare Account ID & KV Namespace ID:** Input fields for the user's Cloudflare Account ID and the ID of the KV Namespace they've created for storing visitor data (e.g., form submissions).
+        *   **Cloudflare Account ID & KV Namespace IDs:** Input fields for the user's Cloudflare Account ID, the ID of the KV Namespace they've created for storing visitor data (e.g., `VISITOR_DATA_KV`), and the ID for the analytics KV namespace (e.g., `ANALYTICS_KV`).
         *   **Cloudflare Worker URL:** An input field for the full URL of their deployed Cloudflare Worker (e.g., `https://my-cms-worker.username.workers.dev`). The CMS admin panel needs this URL to communicate with the worker.
         *   **Guidance on Deploying `cloudflare/worker.js`:**
             *   **Option 1 (Manual Deployment - Recommended for Simplicity):**
@@ -1256,14 +1378,14 @@ Upon the first visit to the `/admin` URL, or if the system detects that essentia
                 2.  Create a new Worker service.
                 3.  Copy the entire content of the provided `/cloudflare/worker.js` file (the admin UI might display this code in a read-only textarea for easy copying).
                 4.  Paste this code into the Cloudflare Worker editor.
-                5.  Navigate to the Worker's settings in Cloudflare and bind the previously created KV Namespace for visitor data (e.g., `VISITOR_DATA_KV`). Also, bind a KV namespace for configurations if needed (e.g., `CONFIG_KV`).
-                6.  Set up required **secrets** (not environment variables for sensitive data) in the Worker's settings for each third-party API key: `OPENAI_API_KEY`, `GEMINI_API_KEY`, `STRIPE_API_KEY`, `DOCUSIGN_API_KEY`, `BREVO_API_KEY`, and an `ADMIN_SETUP_TOKEN` (a custom secret the user creates, e.g., a strong random string, used to authenticate requests from the admin panel to `/setup-config` and `/get-visitor-data` endpoints on the worker).
+                5.  Navigate to the Worker's settings in Cloudflare and bind the previously created KV Namespaces: `VISITOR_DATA_KV`, `ANALYTICS_KV`, and `CONFIG_KV`.
+                6.  Set up required **secrets** (not environment variables for sensitive data) in the Worker's settings for each third-party API key: `OPENAI_API_KEY`, `GEMINI_API_KEY`, `STRIPE_API_KEY`, `DOCUSIGN_API_KEY`, `BREVO_API_KEY`, and an `ADMIN_SETUP_TOKEN` (a custom secret the user creates, e.g., a strong random string, used to authenticate requests from the admin panel to `/setup-config` and data retrieval endpoints on the worker).
             *   **Option 2 (Advanced - Wrangler CLI):** A brief note and a link to official Cloudflare Wrangler documentation for more technical users who prefer command-line deployment.
         *   **Setting API Keys for Proxied Services:**
             *   The admin UI will have input fields for the API keys for OpenAI, Gemini, Stripe, DocuSign, and Brevo.
             *   After the user has deployed their worker and entered these keys into the admin UI, the admin panel will make a secure `POST` request to the `/setup-config` endpoint on the user's *own* deployed Cloudflare Worker. This request will be authenticated using the `ADMIN_SETUP_TOKEN` (which the user also set in the worker's secrets and entered in the admin UI).
             *   The Cloudflare Worker's `/setup-config` endpoint will then save these configurations (like the admin email for Brevo) into its `CONFIG_KV` namespace. **Note:** The API keys themselves are set by the user directly as secrets in the Cloudflare dashboard; the `/setup-config` endpoint is for settings the worker needs to know, not for receiving the API keys directly from the client again.
-*   **Save Settings:** The wizard saves all collected information (site name, hashed admin password, admin email, CF worker URL, Account ID, KV ID, status of API key setup) into `db.js`.
+*   **Save Settings:** The wizard saves all collected information (site name, hashed admin password, admin email, CF worker URL, Account ID, KV IDs, status of API key setup) into `db.js`.
 
 ---
 
@@ -1287,12 +1409,14 @@ When the administrator is ready to make their changes live, they initiate the "P
 *   **Process:**
     1.  **Static Site Generation:**
         *   The `admin.js` module orchestrates the generation process. It iterates through all publishable content (pages, posts, etc.) stored in `db.js`.
-        *   For each content item, a static HTML file is generated. This process involves:
-            *   Fetching the content data from `db.js`.
-            *   Selecting the appropriate HTML template from `/templates/` based on the content type or assigned template.
-            *   Populating the template with the content.
-            *   Invoking `seo.js` to inject all relevant SEO elements into the generated HTML: `<title>`, meta descriptions, canonical URLs, Open Graph tags, Twitter Card tags, and JSON-LD structured data.
-        *   The `sitemap.xml` file is generated or updated with all public URLs.
+        *   For each content item, the system generates **both** (if JSON output is enabled in settings):
+            *   **A static HTML file:** (e.g., `my-page-slug.html`). This file is created by:
+                *   Fetching the content data from `db.js`.
+                *   Selecting the appropriate HTML template from `/templates/` based on the content type or assigned template.
+                *   Populating the template with the content.
+                *   Invoking `seo.js` to inject all relevant SEO elements into the generated HTML: `<title>`, meta descriptions, canonical URLs, Open Graph tags, Twitter Card tags, and JSON-LD structured data.
+            *   **A static JSON file:** (e.g., `my-page-slug.json`, or in a structured path like `/api/content/my-page-slug.json`). This file contains the structured content of the item (e.g., title, body content as markdown or structured JSON, custom fields, metadata), excluding the full HTML theme markup. This JSON output is generated by default and is useful for headless scenarios or custom data integrations.
+        *   The `sitemap.xml` file is generated or updated with all public URLs (linking to the HTML versions).
         *   The `robots.txt` file is generated (using defaults or user-customized rules from `db.js`).
     2.  **Asset Preparation:**
         *   All necessary static assets are collected. This includes:
@@ -1305,6 +1429,7 @@ When the administrator is ready to make their changes live, they initiate the "P
     4.  **Packaging for Upload (Downloadable ZIP):**
         *   The admin UI dynamically creates a ZIP archive in the browser. This archive contains the complete static website:
             *   All generated HTML files (e.g., `index.html`, `about.html`, `blog/my-post.html`).
+            *   All generated JSON files (if enabled).
             *   The entire `/assets/` directory with all its contents (CSS, JS, plugins, images, fonts).
             *   `sitemap.xml`, `robots.txt`.
             *   `service-worker.js`.
@@ -1320,18 +1445,19 @@ When the administrator is ready to make their changes live, they initiate the "P
 
 This flow describes how data generated by visitors on the live site is handled.
 
-*   **Visitor Interaction:** Visitors interact with the published static site (e.g., submit a contact form, post a comment if comments are a feature).
-*   **Client-Side JavaScript:** On the live site, JavaScript (e.g., `email.js` for Brevo- proxied emails, or custom JavaScript for other forms/interactions) captures this data.
-*   **Data Transmission:** This client-side script sends the collected data to the configured Cloudflare Worker URL, targeting specific endpoints (e.g., `/submit-form` for general KV storage, or `/api-proxy/brevo/send-email` for emails).
+*   **Visitor Interaction:** Visitors interact with the published static site (e.g., submit a contact form, view pages).
+*   **Client-Side JavaScript:** On the live site, JavaScript (`main.js` for page views, `email.js` for Brevo-proxied emails, or custom JavaScript for other forms/interactions) captures this data.
+*   **Data Transmission:** This client-side script sends the collected data to the configured Cloudflare Worker URL, targeting specific endpoints (e.g., `/track-view` for analytics, `/submit-form` for general KV storage, or `/api-proxy/brevo/send-email` for emails).
 *   **Cloudflare Worker Processing:** The Cloudflare Worker:
     *   Receives the data.
     *   Performs validation or sanitization.
     *   Executes the required action:
+        *   For page views: Increments a counter for the page path in `ANALYTICS_KV`.
         *   For emails: Calls the Brevo API to send the email.
-        *   For form data: Stores the data in the designated Cloudflare KV namespace (e.g., `VISITOR_DATA_KV`).
+        *   For form data / generic data (can include cart-like data if implemented by custom code/plugins): Stores the data in the designated `VISITOR_DATA_KV` namespace.
 *   **Admin Access to Visitor Data:**
     *   The administrator can view data stored in Cloudflare KV directly via the Cloudflare dashboard.
-    *   Alternatively, the CMS admin panel will have a section (e.g., "Form Submissions," "Visitor Data") that makes authenticated `fetch` requests to a specific endpoint on the user's Cloudflare Worker (e.g., `/get-visitor-data`). This endpoint, after verifying the request, retrieves data from KV and returns it to the admin panel for display.
+    *   Alternatively, the CMS admin panel will have sections (e.g., "Form Submissions," "Analytics") that make authenticated `fetch` requests to specific endpoints on the user's Cloudflare Worker (e.g., `/get-visitor-data`, `/get-analytics-data`). This endpoint, after verifying the request, retrieves data from the relevant KV namespace(s) and returns it to the admin panel for display.
 
 ---
 
@@ -1341,7 +1467,7 @@ The term "Full Sync" in the context of this CMS refers to a specific model of da
 
 *   **Admin Panel Data Authority:** The admin's browser (via `db.js`) is the primary source of truth for all site content, theme settings, and configurations *during the editing phase*.
 *   **Publishing as Snapshot:** The "Publish" action generates a complete, self-contained static snapshot of the website. This snapshot is what goes live.
-*   **Centralized Visitor Data:** Visitor-generated data is sent to and centralized in the user's Cloudflare KV store via the Cloudflare Worker.
+*   **Centralized Visitor Data:** Visitor-generated data (form submissions, page view analytics, any custom cart-like data) is sent to and centralized in the user's Cloudflare KV store(s) via the Cloudflare Worker.
 *   **Admin Data Retrieval:** The admin can retrieve and view this centralized visitor data through the Cloudflare dashboard or via specific, authenticated endpoints on their Worker that serve data to the CMS admin panel.
 *   **No Real-time Content Sync:** There is no real-time, two-way synchronization of content *editing* between multiple users or devices. The "sync" is about the admin's local data being published as a whole, and visitor data being collected centrally.
 
@@ -1407,7 +1533,7 @@ While a full drag-and-drop form builder is an advanced feature, the CMS will sup
 
 *   **Core Functionality:** The CMS's core functionality (content creation, static site generation, admin panel operation) does not rely on any paid third-party services.
 *   **Brevo (Email Sending):** The integration with Brevo for email sending is designed to work with their free tier (typically around 300 emails/day), which is sufficient for many small to medium websites. Users can opt for paid Brevo plans if their volume increases.
-*   **Cloudflare Workers & KV:** Cloudflare provides generous free tiers for Workers (requests, CPU time) and KV storage (reads, writes, storage volume) that should cover the needs of many users for the backend logic and visitor data storage.
+*   **Cloudflare Workers & KV:** Cloudflare provides generous free tiers for Workers (requests, CPU time) and KV storage (reads, writes, storage volume) that should cover the needs of many users for the backend logic and visitor data storage (including form submissions and basic analytics).
 *   **Optional Premium Integrations:** Integrations with services like OpenAI, Gemini, Stripe, and DocuSign are optional. Users who choose to use these services will manage their own accounts and any associated costs based on their usage. The CMS itself does not impose these costs or require these services for its fundamental operation.
 
 ---
@@ -1434,13 +1560,30 @@ While a full drag-and-drop form builder is an advanced feature, the CMS will sup
 
 ---
 
-### 8. Full HTML Page Generation (Static Output)
+### 8. Full HTML & JSON Page Generation (Static Output)
 
-*   **Static HTML Output:** The "Publish" process is fundamentally about generating complete, static HTML files for each page and post. These files contain all the necessary content and markup and require no server-side processing to be displayed by a browser.
-*   **JSON Output (Optional/Future Consideration):**
-    *   While the primary output is static HTML, the system could optionally be extended to generate JSON representations of content (e.g., `/api/pages/my-page.json`, `/api/posts.json`).
-    *   This would support headless CMS use cases, allowing the content to be consumed by other applications, frameworks, or static site generators if desired.
-    *   For the initial version, the focus is on generating a fully functional static HTML website. JSON output would be considered an advanced feature for future iterations.
+*   **Dual Static Output (Default V1 Feature):** The "Publish" process is designed as a V1 feature to generate **both**:
+    *   **Static HTML files:** Complete, themed HTML files for each page and post. These files contain all the necessary content and markup and require no server-side processing to be displayed by a browser.
+    *   **Static JSON files:** By default, for each content item (page, post, etc.), a corresponding `.json` file (e.g., `page-slug.json` or potentially in a structured path like `/api/content/page-slug.json`) is also generated. This file contains the structured content of the item (e.g., title, body as markdown or pre-processed HTML, custom fields as defined in `schemas.json`, metadata like publication date, author, tags), excluding the full HTML theme markup. This facilitates headless CMS use cases, allows content to be easily consumed by other applications or JavaScript on the frontend, and provides a straightforward way to export structured content.
+*   **Configurable JSON Output:**
+    *   A global setting in the admin panel (e.g., under "Settings & Configuration" -> "Content Output Settings"), labeled "Enable JSON Output for Content," will be available. This setting is **enabled by default**.
+    *   Administrators can optionally disable this setting. If disabled, the `.json` files for individual content items will not be generated during the publish process. This can be useful for users who only require HTML output and wish to minimize the number of files in their deployment package, particularly for very large websites.
+
+---
+
+### 9. Carts & Basic Analytics Data Handling
+
+*   **Carts Data Handling (Leveraging Generic Sync):**
+    *   While a full, built-in e-commerce shopping cart system with payment gateway integration is beyond the scope of V1, the generic visitor data synchronization system (`/sync-data` endpoint on Cloudflare Worker, storing to `VISITOR_DATA_KV`) is designed to be flexible.
+    *   Developers can leverage this existing infrastructure to implement cart-like functionalities through custom frontend JavaScript or plugins. For instance, a plugin could manage a user's selections in `localStorage` and then, upon a "checkout" or "save cart" action, send this cart data (as JSON) to the `/sync-data` endpoint for storage in KV.
+    *   The definition of product data itself can be managed using custom schemas in `/config/schemas.json` (see "File and Folder Structure" for an example `Product` schema).
+*   **Basic Page View Analytics (Automated & Privacy-Focused):**
+    *   The CMS includes a simple, automated system for tracking page views, designed with privacy in mind.
+    *   **Tracking Mechanism:** The `main.js` module on the live site sends an asynchronous request to a `/track-view` endpoint on the Cloudflare Worker whenever a page is loaded (or a route changes in SPA mode). This request includes the page path.
+    *   **Worker Logic:** The `/track-view` handler in the Cloudflare Worker increments a counter for the given page path in a dedicated KV namespace (`ANALYTICS_KV`).
+    *   **Privacy Guarantee:** This analytics feature **does not** log IP addresses, user agent strings, or set/read any cookies for tracking purposes, ensuring visitor privacy. It solely counts page path views.
+    *   **Admin Display:** The admin panel features a "Basic Analytics Viewing" section where administrators can see a list of page paths and their total view counts, fetched from the Cloudflare Worker.
+    *   **Setup:** Requires binding the `ANALYTICS_KV` namespace to the Cloudflare Worker during the initial setup.
 
 These additional requirements and guarantees further define the CMS's commitment to accessibility, performance, ease of use, and modern web standards.
 
