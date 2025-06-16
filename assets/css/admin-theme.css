@@ -11,10 +11,10 @@
     --color-success: oklch(65% 0.22 150); /* Tealish Green, same as accent-2 for consistency */
 
     --color-background-main: oklch(98% 0.005 270);
-    --color-background-glass: oklch(97% 0.01 270 / 0.6); /* Slightly increased opacity for main glass */
-    --color-background-glass-sidebar: oklch(97% 0.015 270 / 0.75); /* Increased opacity for sidebar */
+    --color-background-glass: oklch(97% 0.01 270 / 0.6);
+    --color-background-glass-sidebar: oklch(97% 0.015 270 / 0.75);
     --color-surface: oklch(100% 0 0);
-    --color-surface-alt: oklch(97% 0.005 270); /* Slightly off-white for nested cards */
+    --color-surface-alt: oklch(97% 0.005 270);
 
     --color-text-dark: oklch(20% 0.02 270);
     --color-text-medium: oklch(40% 0.015 270);
@@ -25,12 +25,12 @@
     --font-family-headings: "Nunito Sans", "Helvetica Neue", Arial, sans-serif;
     --font-family-body: "Roboto", "Helvetica Neue", Arial, sans-serif;
 
-    --blur-intensity: 5px; /* Slightly sharper glass */
+    --blur-intensity: 5px;
     --border-radius-standard: 10px;
-    --border-radius-large: 16px; /* Consistent large radius for main panels */
+    --border-radius-large: 16px;
     --shadow-standard: 0 6px 24px 0 rgba(31, 38, 135, 0.07);
     --shadow-interactive: 0 8px 28px 0 rgba(31, 38, 135, 0.1);
-    --border-glass: 1px solid oklch(90% 0.01 270 / 0.2); /* More visible border for glass */
+    --border-glass: 1px solid oklch(90% 0.01 270 / 0.2);
     --transition-fast: all 0.2s ease-in-out;
     --transition-medium: all 0.3s ease-in-out;
 }
@@ -160,7 +160,7 @@ body {
 }
 .admin-sidebar nav a:focus-visible {
     outline: 2px solid var(--color-accent-1);
-    outline-offset: -2px; /* Inset outline */
+    outline-offset: -2px;
     background-color: oklch(0 0 0 / 0.04);
 }
 
@@ -371,19 +371,13 @@ body {
 
 /* Content Editor Page Styles */
 .editor-form {
-    padding: 30px; /* Increased padding */
+    padding: 30px;
     background-color: var(--color-surface);
     border-radius: var(--border-radius-large);
     box-shadow: var(--shadow-standard);
 }
 .editor-form .form-group {
     margin-bottom: 25px;
-}
-.editor-form textarea {
-    min-height: 250px;
-    resize: vertical;
-    line-height: 1.5;
-    font-size: 1em;
 }
 
 /* Theme Builder Page Styles */
@@ -392,7 +386,7 @@ body {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 15px;
-    flex-wrap: wrap; /* Allow wrapping for smaller screens */
+    flex-wrap: wrap;
     gap: 15px;
 }
 .theme-builder-header h1 { margin-bottom: 0; border-bottom: none; padding-bottom: 0;}
@@ -408,11 +402,11 @@ body {
 .viewport-btn {
     padding: 8px 15px;
     font-size: 0.9em;
-    font-weight: 600; /* Bolder */
+    font-weight: 600;
     background-color: transparent;
     color: var(--color-text-medium);
     border: 1px solid transparent;
-    box-shadow: none; /* Remove default button shadow */
+    box-shadow: none;
 }
 .viewport-btn.active {
     background: var(--color-primary-gradient);
@@ -424,28 +418,28 @@ body {
     background-color: oklch(0 0 0 / 0.05);
     color: var(--color-text-dark);
     box-shadow: none;
-    transform: none; /* No transform on hover for these */
+    transform: none;
 }
 .viewport-btn:focus-visible {
-    outline-offset: -3px; /* Inset focus for segmented control feel */
+    outline-offset: -3px;
 }
 
 
 .theme-builder-layout {
     display: grid;
-    grid-template-columns: 340px 1fr; /* Slightly wider controls panel */
+    grid-template-columns: 340px 1fr;
     gap: 30px;
 }
 
 .theme-controls-panel {
-    padding: 20px; /* Consistent padding */
+    padding: 20px;
     border-radius: var(--border-radius-large);
-    height: calc(100vh - 60px - 30px - 50px - 30px); /* header - content padding - builder header - bottom padding */
+    height: calc(100vh - 60px - 30px - 50px - 30px); /* Approx: viewport - header - content_padding_top - builder_header - content_padding_bottom */
+    min-height: 400px; /* Ensure it's usable even if viewport is small */
     overflow-y: auto;
-    /* Glassmorphic applied in component */
 }
 .theme-controls-panel .control-panel-segment {
-    margin-bottom: 20px; /* Consistent spacing */
+    margin-bottom: 20px;
     padding-bottom: 20px;
     border-bottom: 1px solid var(--border-glass);
 }
@@ -458,24 +452,24 @@ body {
 
 .theme-controls-panel h2 {
     margin-top: 0;
-    font-size: 1.5em; /* Consistent with other main titles in panel */
+    font-size: 1.5em;
     margin-bottom: 20px;
     color: var(--color-text-dark);
 }
 .theme-controls-panel h3 {
     font-size: 1.15em;
-    color: var(--color-text-dark); /* Darker for better emphasis */
-    margin-top: 15px; /* More space above */
+    color: var(--color-text-dark);
+    margin-top: 15px;
     margin-bottom: 15px;
 }
 .theme-controls-panel h4 {
     font-size: 1.05em;
     font-weight: 600;
     color: var(--color-text-dark);
-    margin-top: 25px; /* More space */
+    margin-top: 25px;
     padding-top: 15px;
     border-top: 1px solid var(--border-glass);
-    margin-bottom: 10px;
+    margin-bottom: 15px;
 }
 
 
@@ -488,10 +482,10 @@ body {
     min-height: 400px;
     border: 1px solid var(--border-glass);
     border-radius: var(--border-radius-large);
-    background-color: oklch(var(--color-background-main) l calc(l - 3%)); /* Slightly darker canvas bg */
+    background-color: oklch(var(--color-background-main) l calc(l - 3%));
     overflow: hidden;
     transition: var(--transition-medium);
-    box-shadow: inset 0 0 10px rgba(0,0,0,0.03); /* Inner shadow for depth */
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.03);
 }
 
 .theme-preview-canvas > h2 {
@@ -510,7 +504,7 @@ body {
     width: 100%;
     max-width: 100%;
     margin: 0 auto;
-    padding: 0; /* Padding handled by sections themselves for accuracy */
+    padding: 0;
     overflow-y: auto;
     background-color: var(--color-surface);
     box-shadow: 0 0 15px rgba(0,0,0,0.1);
@@ -519,11 +513,11 @@ body {
 .live-preview-area p { line-height: 1.6; margin-bottom: 1em; }
 .live-preview-area img { max-width: 100%; height: auto; display: block; }
 .live-preview-area .preview-section {
-    margin-bottom: 0; /* No margin between sections in preview */
-    padding: 30px 20px; /* Default padding for sections */
-    border: none; /* No border for individual sections in preview */
-    border-bottom: 1px dashed oklch(80% 0.01 270 / 0.2); /* Separator */
-    border-radius: 0; /* No radius for individual sections */
+    margin-bottom: 0;
+    padding: 30px 20px;
+    border: none;
+    border-bottom: 1px dashed oklch(80% 0.01 270 / 0.2);
+    border-radius: 0;
 }
 .live-preview-area .preview-section:last-child {
     border-bottom: none;
@@ -531,10 +525,10 @@ body {
 
 
 .theme-control-preview {
-    margin-top: 20px; /* Consistent spacing */
-    padding: 15px; /* Consistent padding */
+    margin-top: 20px;
+    padding: 15px;
     border-radius: var(--border-radius-standard);
-    background-color: oklch(0 0 0 / 0.04); /* Slightly darker */
+    background-color: oklch(0 0 0 / 0.04);
     transition: var(--transition-medium);
 }
 .theme-control-preview p {
@@ -556,7 +550,7 @@ body {
     padding: 12px 15px;
     margin-bottom: 10px;
     cursor: grab;
-    background-color: var(--color-surface-alt); /* Slightly different bg for palette items */
+    background-color: var(--color-surface-alt);
     border: 1px solid var(--border-glass);
     box-shadow: var(--shadow-standard);
     transition: var(--transition-fast);
@@ -577,11 +571,11 @@ body {
 
 .page-sections-dropzone {
     width: 100%;
-    min-height: 250px; /* More drop space */
-    padding: 20px; /* More padding */
-    border: 2px dashed oklch(80% 0.02 270 / 0.5); /* More visible dashed border */
+    min-height: 250px;
+    padding: 20px;
+    border: 2px dashed oklch(80% 0.02 270 / 0.5);
     border-radius: var(--border-radius-standard);
-    background-color: oklch(var(--color-background-main) l calc(l - 0.5%)); /* Very subtle bg change */
+    background-color: oklch(var(--color-background-main) l calc(l - 0.5%));
     flex-grow: 1;
 }
 .dropzone-placeholder {
@@ -593,29 +587,27 @@ body {
 }
 
 .page-section-item-wrapper {
-    margin-bottom: 0; /* No margin, border will separate */
+    margin-bottom: 0;
     border: 2px solid transparent;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
     cursor: pointer;
-    /* background-color: var(--color-surface); Let preview component handle its own bg */
-    /* box-shadow: var(--shadow-standard); */ /* No shadow on wrapper */
-    border-radius: 0; /* No radius on wrapper */
+    border-radius: 0;
+    position: relative; /* For drag handle positioning if needed */
 }
 .page-section-item-wrapper.selected {
     border-color: var(--color-accent-1);
-    /* box-shadow: 0 0 0 3px oklch(var(--color-accent-1) / 0.3); */ /* Remove outer shadow for cleaner look */
+    box-shadow: inset 0 0 0 2px oklch(var(--color-accent-1) / 0.3);
 }
 .page-section-item-wrapper:hover:not(.selected) {
-    border-color: oklch(var(--color-accent-1) / 0.3); /* More subtle hover border */
+    border-color: oklch(var(--color-accent-1) / 0.3);
 }
 
 
 .page-section-item {
-    /* padding: 12px 15px;  Padding handled by preview component */
-    display: flex; /* Used by drag handle */
+    display: flex;
     align-items: center;
     transition: var(--transition-fast);
-    /* border-radius: calc(var(--border-radius-standard) - 2px);  No radius here */
+    position: relative; /* For absolute positioned elements inside if any */
 }
 
 
@@ -624,11 +616,11 @@ body {
     margin-right: 15px;
     color: var(--color-text-medium);
     font-size: 1.2em;
-    padding: 10px 5px; /* Make easier to grab */
+    padding: 10px 5px;
     opacity: 0.6;
     transition: opacity var(--transition-fast);
 }
-.page-section-item-wrapper:hover .drag-handle {
+.page-section-item-wrapper:hover .drag-handle { /* Show handle more clearly on wrapper hover */
     opacity: 1;
 }
 .drag-handle:hover {
@@ -654,7 +646,7 @@ body {
 }
 .section-settings-editor h3 {
     font-size: 1.15em;
-    color: var(--color-text-dark); /* Darker for emphasis */
+    color: var(--color-text-dark);
     margin-top: 10px;
     margin-bottom: 15px;
 }
@@ -665,7 +657,7 @@ body {
     margin-top: 25px;
     padding-top: 15px;
     border-top: 1px solid var(--border-glass);
-    margin-bottom: 15px; /* More space */
+    margin-bottom: 15px;
 }
 
 
@@ -678,6 +670,10 @@ body {
     align-items: center;
     gap: 10px;
 }
+.palette-input-group label {
+    font-size: 0.9em;
+    margin-bottom: 0;
+}
 .palette-input-group input[type="text"] {
     flex-grow: 1;
 }
@@ -685,11 +681,11 @@ body {
     max-width: 60px;
     height: 40px;
     padding: 2px;
-    border-radius: var(--border-radius-standard); /* Consistent radius */
+    border-radius: var(--border-radius-standard);
 }
 .color-swatch {
     display: inline-block;
-    width: 36px; /* Larger swatch */
+    width: 36px;
     height: 36px;
     border-radius: var(--border-radius-standard);
     border: 1px solid var(--border-glass);
@@ -705,7 +701,7 @@ body {
 .checkbox-label {
     display: flex;
     align-items: center;
-    gap: 6px; /* Slightly more gap */
+    gap: 6px;
     font-weight: normal;
     font-size: 0.9em;
     padding: 8px 12px;
@@ -822,4 +818,127 @@ a:hover {
     border-radius: var(--border-radius-large);
     box-shadow: var(--shadow-standard);
     padding: 25px;
+}
+
+/* Rich Text Editor specific styles */
+.rte-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px; /* Reduced gap */
+    padding: 8px; /* Reduced padding */
+    background-color: var(--color-surface-alt);
+    border-radius: var(--border-radius-standard) var(--border-radius-standard) 0 0;
+    border: 1px solid var(--border-glass);
+    border-bottom: none;
+}
+.rte-button {
+    background-color: transparent;
+    border: 1px solid transparent;
+    color: var(--color-text-medium);
+    padding: 6px 8px; /* Adjusted padding */
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9em; /* Consistent font size */
+    box-shadow: none;
+    transition: var(--transition-fast);
+    line-height: 1; /* Ensure consistent height */
+}
+.rte-button:hover {
+    background-color: oklch(0 0 0 / 0.05);
+    color: var(--color-text-dark);
+    transform: none;
+    box-shadow: none;
+}
+.rte-button.active {
+    background-color: oklch(var(--color-accent-1) / 0.2);
+    color: var(--color-accent-1);
+    font-weight: bold;
+}
+.rte-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.rte-button:focus-visible { /* Specific focus for toolbar buttons */
+    outline: 2px solid var(--color-accent-1);
+    outline-offset: -2px; /* Inset outline */
+}
+
+
+.ProseMirror { /* TipTap editor content area class */
+    min-height: 150px;
+    max-height: 300px;
+    overflow-y: auto;
+    padding: 15px;
+    border: 1px solid var(--border-glass);
+    border-radius: 0 0 var(--border-radius-standard) var(--border-radius-standard);
+    background-color: var(--color-surface);
+    font-family: var(--font-family-body);
+    line-height: 1.6;
+    color: var(--color-text-dark);
+    transition: var(--transition-fast);
+}
+.ProseMirror:focus {
+    outline: none;
+    border-color: var(--color-accent-1);
+    box-shadow: 0 0 0 2px oklch(var(--color-accent-1) / 0.2);
+}
+.ProseMirror p { margin: 0 0 1em 0; }
+.ProseMirror h1, .ProseMirror h2, .ProseMirror h3 {
+    font-family: var(--font-family-headings);
+    color: var(--color-text-dark);
+    margin-top: 1.2em;
+    margin-bottom: 0.6em;
+    line-height: 1.3;
+}
+.ProseMirror h1 { font-size: 1.8em; }
+.ProseMirror h2 { font-size: 1.5em; }
+.ProseMirror h3 { font-size: 1.25em; }
+.ProseMirror ul, .ProseMirror ol { padding-left: 25px; margin-bottom: 1em;}
+.ProseMirror li > p { margin-bottom: 0.2em; }
+.ProseMirror a { color: var(--color-accent-1); text-decoration: underline; }
+.ProseMirror a:hover { color: var(--color-primary-gradient-start); }
+.ProseMirror.ProseMirror-focused {
+    outline: none;
+}
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--color-text-medium);
+  opacity: 0.6;
+  pointer-events: none;
+  height: 0;
+}
+
+/* Ensure RTE in ThemeBuilderPage's control panel is usable */
+.theme-controls-panel .ProseMirror {
+    min-height: 100px;
+    max-height: 200px;
+    font-size: 0.95em; /* Slightly smaller font for controls panel context */
+    line-height: 1.5;
+}
+.theme-controls-panel .rte-toolbar {
+    padding: 6px;
+    gap: 4px; /* Tighter gap for buttons */
+}
+.theme-controls-panel .rte-button {
+    padding: 5px 8px;
+    font-size: 0.85em;
+}
+
+/* Scrollbar styling for Webkit browsers */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+::-webkit-scrollbar-track {
+    background: oklch(var(--color-background-main) l calc(l - 5%));
+    border-radius: var(--border-radius-standard);
+}
+::-webkit-scrollbar-thumb {
+    background: oklch(var(--color-text-medium) / 0.5);
+    border-radius: var(--border-radius-standard);
+    border: 2px solid oklch(var(--color-background-main) l calc(l - 5%)); /* Padding around thumb */
+}
+::-webkit-scrollbar-thumb:hover {
+    background: oklch(var(--color-text-medium) / 0.7);
 }

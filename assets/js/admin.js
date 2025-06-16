@@ -1,8 +1,14 @@
 // Ensure Preact and Navigo are loaded (from CDN in this case)
-const { h, render, Component, createRef } = preact;
-const { useEffect, useState, useCallback, useMemo } = preactHooks;
+const { h, render, Component, createRef, Fragment } = preact;
+const { useEffect, useState, useCallback, useMemo, useRef } = preactHooks;
 const Navigo = window.Navigo;
 const Sortable = window.Sortable;
+
+// TipTap global objects (assuming loaded from CDN)
+const TiptapCore = window.Tiptap.Core;
+const TiptapStarterKit = window.TiptapStarterKit.StarterKit;
+const TiptapLink = window.TiptapLink.Link;
+const TiptapPlaceholder = window.TiptapPlaceholder.Placeholder;
 
 // Import DB functions
 import { db, getSetting, setSetting, addContent, getContentById, updateContent, deleteContent, getAllContentByType } from './db.js';
@@ -279,11 +285,74 @@ function ContentListPage({ contentType, router }) { /* ... (existing ContentList
     );
 }
 
+// --- RichTextEditor Component ---
+const RichTextEditor = ({ content, onChange, placeholder }) => { /* ... (existing RichTextEditor component code - unchanged) ... */
+    const editorRef = useRef(null);
+    const tiptapInstance = useRef(null);
+    const [isToolbarActive, setIsToolbarActive] = useState({});
+
+    useEffect(() => {
+        if (!TiptapCore || !TiptapStarterKit || !TiptapLink || !TiptapPlaceholder) {
+            console.error("TipTap libraries not loaded!");
+            return;
+        }
+
+        tiptapInstance.current = new TiptapCore.Editor({
+            element: editorRef.current,
+            extensions: [
+                TiptapStarterKit.configure({ heading: { levels: [1, 2, 3] } }),
+                TiptapLink.configure({ openOnClick: false, autolink: true }),
+                TiptapPlaceholder.configure({ placeholder: placeholder || 'Start writing...' }),
+            ],
+            content: content || '',
+            onUpdate: ({ editor }) => { onChange(editor.getHTML()); },
+            onSelectionUpdate: ({ editor }) => {
+                setIsToolbarActive({
+                    bold: editor.isActive('bold'), italic: editor.isActive('italic'),
+                    h1: editor.isActive('heading', { level: 1 }), h2: editor.isActive('heading', { level: 2 }),
+                    h3: editor.isActive('heading', { level: 3 }), bulletList: editor.isActive('bulletList'),
+                    orderedList: editor.isActive('orderedList'), link: editor.isActive('link'),
+                });
+            },
+        });
+        return () => { tiptapInstance.current?.destroy(); };
+    }, [content, placeholder]); // Add placeholder to dependencies
+
+    const toggleHeading = (level) => tiptapInstance.current?.chain().focus().toggleHeading({ level }).run();
+    const toggleBold = () => tiptapInstance.current?.chain().focus().toggleBold().run();
+    const toggleItalic = () => tiptapInstance.current?.chain().focus().toggleItalic().run();
+    const toggleBulletList = () => tiptapInstance.current?.chain().focus().toggleBulletList().run();
+    const toggleOrderedList = () => tiptapInstance.current?.chain().focus().toggleOrderedList().run();
+
+    const setLink = useCallback(() => {
+        const editor = tiptapInstance.current; if (!editor) return;
+        const previousUrl = editor.getAttributes('link').href;
+        const url = window.prompt('URL', previousUrl); if (url === null) return;
+        if (url === '') { editor.chain().focus().extendMarkRange('link').unsetLink().run(); return; }
+        editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+    }, [tiptapInstance.current]);
+
+    return h(Fragment, {},
+        h('div', { class: 'rte-toolbar' },
+            h('button', { type: 'button', class: `rte-button ${isToolbarActive.h1 ? 'active' : ''}`, onClick: () => toggleHeading(1) }, 'H1'),
+            h('button', { type: 'button', class: `rte-button ${isToolbarActive.h2 ? 'active' : ''}`, onClick: () => toggleHeading(2) }, 'H2'),
+            h('button', { type: 'button', class: `rte-button ${isToolbarActive.h3 ? 'active' : ''}`, onClick: () => toggleHeading(3) }, 'H3'),
+            h('button', { type: 'button', class: `rte-button ${isToolbarActive.bold ? 'active' : ''}`, onClick: toggleBold }, 'B'),
+            h('button', { type: 'button', class: `rte-button ${isToolbarActive.italic ? 'active' : ''}`, onClick: toggleItalic }, 'I'),
+            h('button', { type: 'button', class: `rte-button ${isToolbarActive.link ? 'active' : ''}`, onClick: setLink }, 'Link'),
+            h('button', { type: 'button', class: `rte-button ${isToolbarActive.bulletList ? 'active' : ''}`, onClick: toggleBulletList }, 'UL'),
+            h('button', { type: 'button', class: `rte-button ${isToolbarActive.orderedList ? 'active' : ''}`, onClick: toggleOrderedList }, 'OL')
+        ),
+        h('div', { class: 'rte-content', ref: editorRef })
+    );
+};
+
+
 // --- ContentEditorPage Component ---
-function ContentEditorPage({ contentType, contentId, router }) { /* ... (existing ContentEditorPage component code - unchanged) ... */
+function ContentEditorPage({ contentType, contentId, router }) {
     const [title, setTitle] = useState('');
     const [slug, setSlug] = useState('');
-    const [content, setContent] = useState('');
+    const [htmlContent, setHtmlContent] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
     const isEditing = contentId != null;
@@ -295,12 +364,12 @@ function ContentEditorPage({ contentType, contentId, router }) { /* ... (existin
             setIsLoading(true);
             getContentById(Number(contentId)).then(item => {
                 if (item) {
-                    setTitle(item.title); setSlug(item.slug); setContent(item.content);
+                    setTitle(item.title); setSlug(item.slug); setHtmlContent(item.content);
                 } else { setError(`Content item with ID ${contentId} not found.`); }
                 setIsLoading(false);
             });
         } else {
-            setTitle(''); setSlug(''); setContent(''); setIsLoading(false); setError(null);
+            setTitle(''); setSlug(''); setHtmlContent(''); setIsLoading(false); setError(null);
         }
     }, [contentId, isEditing, contentType]);
 
@@ -311,14 +380,16 @@ function ContentEditorPage({ contentType, contentId, router }) { /* ... (existin
         }
     };
     const handleSlugChange = (e) => setSlug(e.target.value);
-    const handleContentChange = (e) => setContent(e.target.value);
+    const handleContentChange = (newHtmlContent) => {
+        setHtmlContent(newHtmlContent);
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault(); setIsLoading(true); setError(null);
-        if (!title || !slug || !content) {
-            setError('Title, Slug, and Content are required.'); setIsLoading(false); return;
+        if (!title || !slug ) {
+            setError('Title and Slug are required.'); setIsLoading(false); return;
         }
-        const itemData = { type: contentType, title, slug, content };
+        const itemData = { type: contentType, title, slug, content: htmlContent };
         try {
             if (isEditing) { await updateContent(Number(contentId), itemData); }
             else { await addContent(itemData); }
@@ -328,7 +399,7 @@ function ContentEditorPage({ contentType, contentId, router }) { /* ... (existin
         }
     };
 
-    if (isLoading && isEditing) return h('p', {}, 'Loading editor...');
+    if (isLoading && isEditing && !title) return h('p', {}, 'Loading editor...');
     if (error && isEditing && !title) return h('p', {class: 'login-error'}, error);
 
     return h('div', { class: 'content-editor-page' },
@@ -337,14 +408,18 @@ function ContentEditorPage({ contentType, contentId, router }) { /* ... (existin
         h('form', { onSubmit: handleSubmit, class: 'editor-form' },
             h('div', { class: 'form-group' }, h('label', { for: 'title' }, 'Title'), h('input', { type: 'text', id: 'title', value: title, onInput: handleTitleChange, required: true })),
             h('div', { class: 'form-group' }, h('label', { for: 'slug' }, 'Slug'), h('input', { type: 'text', id: 'slug', value: slug, onInput: handleSlugChange, required: true })),
-            h('div', { class: 'form-group' }, h('label', { for: 'content' }, 'Content (Markdown or HTML)'), h('textarea', { id: 'content', value: content, onInput: handleContentChange, rows: 15, required: true })),
+            h('div', { class: 'form-group' },
+                h('label', { for: 'content-editor' }, 'Content'),
+                h(RichTextEditor, { content: htmlContent, onChange: handleContentChange, placeholder: "Start writing your amazing content..." })
+            ),
             h('button', { type: 'submit', class: 'button-primary', disabled: isLoading }, isLoading ? 'Saving...' : 'Save')
         )
     );
 }
 
+
 // --- Section Preview Components ---
-const HeroSectionPreview = ({ settings, globalStyles, currentViewport }) => {
+const HeroSectionPreview = ({ settings, globalStyles, currentViewport }) => { /* ... (existing, but check for richtext fields) ... */
     const responsiveSettings = settings.responsive || {};
     const viewportSettings = responsiveSettings[currentViewport] || {};
     if (viewportSettings.visible === false) return null;
@@ -361,13 +436,16 @@ const HeroSectionPreview = ({ settings, globalStyles, currentViewport }) => {
         backgroundImage: settings.backgroundImageUrl ? `url(${settings.backgroundImageUrl})` : 'none',
         backgroundSize: 'cover', backgroundPosition: 'center'
     };
+    // For rich text fields, use dangerouslySetInnerHTML
+    const subtitleHTML = { __html: settings.subtitle || 'Hero subtitle text.' };
+
     return h('div', { class: 'preview-section preview-hero', style },
         h('h1', { style: { margin: '0 0 10px 0', fontSize: '2em', color: settings.textColor || globalStyles.palette?.textLight || '#fff' } }, settings.title || 'Hero Title'),
-        h('p', { style: { margin: '0 0 15px 0', fontSize: '1.1em', color: settings.textColor || globalStyles.palette?.textLight || '#fff' } }, settings.subtitle || 'Hero subtitle text.'),
+        h('p', { style: { margin: '0 0 15px 0', fontSize: '1.1em', color: settings.textColor || globalStyles.palette?.textLight || '#fff' }, dangerouslySetInnerHTML: subtitleHTML }),
         settings.buttonText && h('button', { class: 'button-primary', style: { backgroundColor: globalStyles.primaryColor, color: globalStyles.palette?.textOnPrimary || '#fff'} }, settings.buttonText)
     );
 };
-const TextBlockPreview = ({ settings, globalStyles, currentViewport }) => {
+const TextBlockPreview = ({ settings, globalStyles, currentViewport }) => { /* ... (existing, but check for richtext fields) ... */
     const responsiveSettings = settings.responsive || {};
     const viewportSettings = responsiveSettings[currentViewport] || {};
     if (viewportSettings.visible === false) return null;
@@ -378,21 +456,23 @@ const TextBlockPreview = ({ settings, globalStyles, currentViewport }) => {
         fontFamily: globalStyles.baseFontFamily || 'sans-serif',
         color: settings.textColor || globalStyles.palette?.textDark || 'inherit',
     };
+    const contentHTML = { __html: settings.content || 'This is some default paragraph text. You can edit it.' };
+
     return h('div', { class: 'preview-section preview-text-block', style },
         settings.heading && h('h2', { style: { color: settings.headingColor || globalStyles.palette?.textDark || 'inherit' } }, settings.heading || 'Section Heading'),
-        h('p', { style: { whiteSpace: 'pre-wrap'} }, settings.content || 'This is some default paragraph text. You can edit it.')
+        h('div', { dangerouslySetInnerHTML: contentHTML }) // Use a div for ProseMirror content
     );
 };
-const GalleryPreview = ({ settings, globalStyles, currentViewport }) => {
+const GalleryPreview = ({ settings, globalStyles, currentViewport }) => { /* ... (existing GalleryPreview - unchanged) ... */
     const responsiveSettings = settings.responsive || {};
     const viewportSettings = responsiveSettings[currentViewport] || {};
     if (viewportSettings.visible === false) return null;
 
     const images = typeof settings.images === 'string' ? settings.images.split(',').map(s => s.trim()).filter(s => s) : (Array.isArray(settings.images) ? settings.images : []);
-    const columns = viewportSettings.columns || settings.columns || 3; // Allow responsive columns
+    const columns = viewportSettings.columns || settings.columns || 3;
     const style = {
         display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`,
-        gap: viewportSettings.gap || settings.gap || '10px', // Allow responsive gap
+        gap: viewportSettings.gap || settings.gap || '10px',
         padding: '20px', fontFamily: globalStyles.baseFontFamily || 'sans-serif'
     };
     return h('div', { class: 'preview-section preview-gallery', style },
@@ -418,42 +498,61 @@ function ThemeBuilderPage({ router }) {
     const [message, setMessage] = useState('');
     const [activePageLayout, setActivePageLayout] = useState('homepage');
     const [selectedSectionId, setSelectedSectionId] = useState(null);
-    const [currentViewport, setCurrentViewport] = useState('desktop'); // desktop, tablet, mobile
+    const [currentViewport, setCurrentViewport] = useState('desktop');
 
     const paletteRef = createRef();
     const pageSectionsRef = createRef();
     const sortableInstances = useMemo(() => ({ palette: null, pageSections: null }), []);
 
-    const defaultPalette = { /* ... (existing defaultPalette - unchanged) ... */
-        brandPrimary: 'oklch(65% 0.25 330)',
-        brandAccent: 'oklch(70% 0.22 250)',
-        textDark: 'oklch(20% 0.02 270)',
-        textLight: 'oklch(98% 0.005 270)',
-        backgroundMain: 'oklch(98% 0.005 270)',
-        surface: 'oklch(100% 0 0)',
+    const defaultPalette = {
+        brandPrimary: 'oklch(65% 0.25 330)', brandAccent: 'oklch(70% 0.22 250)',
+        textDark: 'oklch(20% 0.02 270)', textLight: 'oklch(98% 0.005 270)',
+        backgroundMain: 'oklch(98% 0.005 270)', surface: 'oklch(100% 0 0)',
+        textOnPrimary: 'oklch(100% 0 0)'
     };
-    const defaultThemeConfig = { /* ... (existing defaultThemeConfig - unchanged) ... */
+    const defaultThemeConfig = {
         globalStyles: {
             primaryColor: defaultPalette.brandPrimary,
-            baseFontFamily: "Roboto",
-            headingFontFamily: "Nunito Sans",
+            baseFontFamily: "Roboto", headingFontFamily: "Nunito Sans",
             palette: { ...defaultPalette },
-            fontSubsets: ["latin", "latin-ext"],
-            customCss: ""
+            fontSubsets: ["latin", "latin-ext"], customCss: ""
         },
         pages: {
             homepage: { name: "Homepage", sections: [] },
             defaultPost: { name: "Default Post", sections: [] }
         },
         predefinedSections: [
-            { type: "hero", name: "Hero Section", description: "Large prominent section", defaultSettings: { title: "Welcome!", subtitle: "Amazing things await.", backgroundImageUrl: "", buttonText: "Learn More", buttonLink: "#", textColor: "#FFFFFF", textAlignment: "center", minHeight: "400px", backgroundColor: defaultPalette.brandAccent },
-              fields: [{name: 'title', label: 'Title', type: 'text'}, {name: 'subtitle', label: 'Subtitle', type: 'textarea'}, {name: 'backgroundImageUrl', label: 'Background Image URL', type: 'text', inputType: 'url'}, {name: 'buttonText', label: 'Button Text', type: 'text'}, {name: 'buttonLink', label: 'Button Link', type: 'text', inputType: 'url'}, {name: 'textColor', label: 'Text Color', type: 'color'}, {name: 'backgroundColor', label: 'Background Color', type: 'color'}, {name: 'textAlignment', label: 'Text Alignment', type: 'select', options: ["left", "center", "right"]}, {name: 'minHeight', label: 'Min Height (e.g. 400px)', type: 'text'}]
+            { type: "hero", name: "Hero Section", description: "Large prominent section",
+              defaultSettings: { title: "Welcome!", subtitle: "<p>Amazing things <strong>await</strong>.</p>", backgroundImageUrl: "", buttonText: "Learn More", buttonLink: "#", textColor: "#FFFFFF", textAlignment: "center", minHeight: "400px", backgroundColor: defaultPalette.brandAccent },
+              fields: [
+                {name: 'title', label: 'Title', type: 'text'},
+                {name: 'subtitle', label: 'Subtitle', type: 'richtext', placeholder: 'Enter subtitle...'}, // Changed to richtext
+                {name: 'backgroundImageUrl', label: 'Background Image URL', type: 'text', inputType: 'url'},
+                {name: 'buttonText', label: 'Button Text', type: 'text'},
+                {name: 'buttonLink', label: 'Button Link', type: 'text', inputType: 'url'},
+                {name: 'textColor', label: 'Text Color', type: 'color'},
+                {name: 'backgroundColor', label: 'Background Color', type: 'color'},
+                {name: 'textAlignment', label: 'Text Alignment', type: 'select', options: ["left", "center", "right"]},
+                {name: 'minHeight', label: 'Min Height (e.g. 400px)', type: 'text'}
+              ]
             },
-            { type: "textBlock", name: "Text Block", description: "Simple text block", defaultSettings: { heading: "About Us", content: "We are a dynamic team passionate about creating innovative solutions.", backgroundColor: "transparent", textColor: defaultPalette.textDark, headingColor: defaultPalette.textDark },
-              fields: [{name: 'heading', label: 'Heading', type: 'text'}, {name: 'content', label: 'Content', type: 'textarea'}, {name: 'backgroundColor', label: 'Background Color', type: 'color'}, {name: 'textColor', label: 'Text Color', type: 'color'}, {name: 'headingColor', label: 'Heading Color', type: 'color'}]
+            { type: "textBlock", name: "Text Block", description: "Simple text block",
+              defaultSettings: { heading: "About Us", content: "<p>We are a <em>dynamic</em> team passionate about creating innovative solutions.</p>", backgroundColor: "transparent", textColor: defaultPalette.textDark, headingColor: defaultPalette.textDark },
+              fields: [
+                {name: 'heading', label: 'Heading', type: 'text'},
+                {name: 'content', label: 'Content', type: 'richtext', placeholder: 'Enter your text here...'}, // Changed to richtext
+                {name: 'backgroundColor', label: 'Background Color', type: 'color'},
+                {name: 'textColor', label: 'Text Color', type: 'color'},
+                {name: 'headingColor', label: 'Heading Color', type: 'color'}
+              ]
             },
-            { type: "gallery", name: "Image Gallery", description: "Grid of images", defaultSettings: { images: "https://picsum.photos/seed/cms1/300/200,https://picsum.photos/seed/cms2/300/200,https://picsum.photos/seed/cms3/300/200", columns: 3, gap: "10px" },
-              fields: [{name: 'images', label: 'Images (URLs, comma-separated)', type: 'textarea'}, {name: 'columns', label: 'Columns (2-4)', type: 'select', options: [2,3,4]}, {name: 'gap', label: 'Gap (e.g. 10px)', type: 'text'}]
+            { type: "gallery", name: "Image Gallery", description: "Grid of images",
+              defaultSettings: { images: "https://picsum.photos/seed/cms1/300/200,https://picsum.photos/seed/cms2/300/200,https://picsum.photos/seed/cms3/300/200", columns: 3, gap: "10px" },
+              fields: [
+                {name: 'images', label: 'Images (URLs, comma-separated)', type: 'textarea'},
+                {name: 'columns', label: 'Columns (2-4)', type: 'select', options: [2,3,4]},
+                {name: 'gap', label: 'Gap (e.g. 10px)', type: 'text'}
+              ]
             }
         ]
     };
@@ -466,7 +565,6 @@ function ThemeBuilderPage({ router }) {
             const initialConfig = config ? {...defaultThemeConfig, ...config, globalStyles: {...defaultThemeConfig.globalStyles, ...(config.globalStyles || {}), palette: {...defaultThemeConfig.globalStyles.palette, ...(config.globalStyles?.palette || {})}}} : JSON.parse(JSON.stringify(defaultThemeConfig));
             if (!initialConfig.globalStyles.palette) initialConfig.globalStyles.palette = JSON.parse(JSON.stringify(defaultThemeConfig.globalStyles.palette));
             if (!initialConfig.globalStyles.fontSubsets) initialConfig.globalStyles.fontSubsets = [...defaultThemeConfig.globalStyles.fontSubsets];
-
             setThemeConfig(initialConfig);
             setIsLoading(false);
         }).catch(err => {
@@ -499,7 +597,7 @@ function ThemeBuilderPage({ router }) {
                         id: `sec_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
                         type: predefinedSection.type,
                         settings: JSON.parse(JSON.stringify(predefinedSection.defaultSettings)),
-                        responsive: { desktop: {visible:true}, tablet: {visible:true}, mobile: {visible:true} } // Default visibility
+                        responsive: { desktop: {visible:true}, tablet: {visible:true}, mobile: {visible:true} }
                     };
 
                     const currentPageKey = activePageLayout;
@@ -534,7 +632,7 @@ function ThemeBuilderPage({ router }) {
     const handlePaletteColorChange = (colorName, oklchValue) => { /* ... (unchanged) ... */ setThemeConfig(prev => { const newPalette = { ...prev.globalStyles.palette, [colorName]: oklchValue }; return { ...prev, globalStyles: { ...prev.globalStyles, palette: newPalette } }; }); };
     const handleFontSubsetChange = (subset, isChecked) => { /* ... (unchanged) ... */ setThemeConfig(prev => { const currentSubsets = prev.globalStyles.fontSubsets || []; let newSubsets; if (isChecked) { newSubsets = [...currentSubsets, subset]; } else { newSubsets = currentSubsets.filter(s => s !== subset); } return { ...prev, globalStyles: { ...prev.globalStyles, fontSubsets: newSubsets } }; }); };
 
-    const handleSectionSettingChange = (fieldName, newValue) => { /* ... (unchanged) ... */
+    const handleSectionSettingChange = (fieldName, newValue) => {
         if (!selectedSectionId) return;
         setThemeConfig(prev => {
             const newConfig = JSON.parse(JSON.stringify(prev));
@@ -546,36 +644,28 @@ function ThemeBuilderPage({ router }) {
             return newConfig;
         });
     };
-
-    const handleResponsiveSettingChange = (viewport, settingName, newValue) => {
+    const handleResponsiveSettingChange = (viewport, settingName, newValue) => { /* ... (unchanged) ... */
         if (!selectedSectionId) return;
         setThemeConfig(prev => {
-            const newConfig = JSON.parse(JSON.stringify(prev)); // Deep clone for immutability
+            const newConfig = JSON.parse(JSON.stringify(prev));
             const pageKey = activePageLayout;
             const sectionIndex = newConfig.pages[pageKey].sections.findIndex(s => s.id === selectedSectionId);
-
             if (sectionIndex > -1) {
-                if (!newConfig.pages[pageKey].sections[sectionIndex].responsive) {
-                    newConfig.pages[pageKey].sections[sectionIndex].responsive = {};
-                }
-                if (!newConfig.pages[pageKey].sections[sectionIndex].responsive[viewport]) {
-                    newConfig.pages[pageKey].sections[sectionIndex].responsive[viewport] = {};
-                }
+                if (!newConfig.pages[pageKey].sections[sectionIndex].responsive) newConfig.pages[pageKey].sections[sectionIndex].responsive = {};
+                if (!newConfig.pages[pageKey].sections[sectionIndex].responsive[viewport]) newConfig.pages[pageKey].sections[sectionIndex].responsive[viewport] = {};
                 newConfig.pages[pageKey].sections[sectionIndex].responsive[viewport][settingName] = newValue;
             }
             return newConfig;
         });
     };
 
-    const handleSaveTheme = async () => { /* ... (unchanged, but ensure dynamic style tag updates) ... */
+    const handleSaveTheme = async () => { /* ... (unchanged) ... */
         setIsLoading(true); setMessage('');
         try {
             await setSetting(THEME_CONFIG_KEY, themeConfig);
             setMessage('Theme settings saved successfully!');
             const dynamicStyleEl = document.getElementById('theme-builder-dynamic-styles');
-            if (dynamicStyleEl) {
-                dynamicStyleEl.innerHTML = generatePreviewGlobalStyles();
-            }
+            if (dynamicStyleEl) dynamicStyleEl.innerHTML = generatePreviewGlobalStyles();
         } catch (err) { console.error("Error saving theme config:", err); setMessage('Error saving theme settings.'); }
         setIsLoading(false);
         setTimeout(() => setMessage(''), 3000);
@@ -583,46 +673,17 @@ function ThemeBuilderPage({ router }) {
 
     const generatePreviewGlobalStyles = () => { /* ... (unchanged) ... */
         if (!themeConfig || !themeConfig.globalStyles) return '';
-        const gs = themeConfig.globalStyles;
-        let paletteCssVars = '';
-        if(gs.palette) {
-            for (const [key, value] of Object.entries(gs.palette)) {
-                paletteCssVars += `--preview-color-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}: ${value};\n`;
-            }
-        }
-
-        let googleFontUrl = '';
-        const families = [];
+        const gs = themeConfig.globalStyles; let paletteCssVars = '';
+        if(gs.palette) { for (const [key, value] of Object.entries(gs.palette)) { paletteCssVars += `--preview-color-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}: ${value};\n`; } }
+        let googleFontUrl = ''; const families = [];
         if (gs.baseFontFamily && !availableFonts.includes(gs.baseFontFamily)) families.push(gs.baseFontFamily);
         if (gs.headingFontFamily && gs.headingFontFamily !== gs.baseFontFamily && !availableFonts.includes(gs.headingFontFamily)) families.push(gs.headingFontFamily);
-
-        if (families.length > 0) {
-            googleFontUrl = `https://fonts.googleapis.com/css2?${families.map(f => `family=${f.replace(/\s/g, '+')}:wght@400;700`).join('&')}`;
-            if (gs.fontSubsets && gs.fontSubsets.length > 0) {
-                googleFontUrl += `&subset=${gs.fontSubsets.join(',')}`;
-            }
-            googleFontUrl += '&display=swap';
-        }
-
-        return `
-        ${googleFontUrl ? `@import url('${googleFontUrl}');` : ''}
-        .live-preview-area {
-            ${paletteCssVars}
-            font-family: '${gs.baseFontFamily || 'sans-serif'}', sans-serif;
-            background-color: var(--preview-color-background-main, #fff);
-            color: var(--preview-color-text-dark, #333);
-        }
-        .live-preview-area h1, .live-preview-area h2, .live-preview-area h3, .live-preview-area h4, .live-preview-area h5, .live-preview-area h6 {
-            font-family: '${gs.headingFontFamily || gs.baseFontFamily || 'sans-serif'}', sans-serif;
-            color: var(--preview-color-text-dark, #333);
-        }
-        .live-preview-area p { line-height: 1.7; margin-bottom: 1em; }
-        .live-preview-area a { color: var(--preview-color-brand-primary, blue); }
-        .live-preview-area .button-primary {
-             background: var(--preview-color-brand-primary, blue);
-             color: var(--preview-color-text-on-primary, white);
-        }
-        `;
+        if (families.length > 0) { googleFontUrl = `https://fonts.googleapis.com/css2?${families.map(f => `family=${f.replace(/\s/g, '+')}:wght@400;700`).join('&')}`; if (gs.fontSubsets && gs.fontSubsets.length > 0) { googleFontUrl += `&subset=${gs.fontSubsets.join(',')}`; } googleFontUrl += '&display=swap'; }
+        return `${googleFontUrl ? `@import url('${googleFontUrl}');` : ''}
+        .live-preview-area { ${paletteCssVars} font-family: '${gs.baseFontFamily || 'sans-serif'}', sans-serif; background-color: var(--preview-color-background-main, #fff); color: var(--preview-color-text-dark, #333); }
+        .live-preview-area h1, .live-preview-area h2, .live-preview-area h3, .live-preview-area h4, .live-preview-area h5, .live-preview-area h6 { font-family: '${gs.headingFontFamily || gs.baseFontFamily || 'sans-serif'}', sans-serif; color: var(--preview-color-text-dark, #333); }
+        .live-preview-area p { line-height: 1.7; margin-bottom: 1em; } .live-preview-area a { color: var(--preview-color-brand-primary, blue); }
+        .live-preview-area .button-primary { background: var(--preview-color-brand-primary, blue); color: var(--preview-color-text-on-primary, white); }`;
     };
 
     if (isLoading || !themeConfig) return h('p', {class: 'centered-container'}, 'Loading Theme Builder...');
@@ -631,10 +692,10 @@ function ThemeBuilderPage({ router }) {
     const selectedSectionData = selectedSectionId ? currentSections.find(s => s.id === selectedSectionId) : null;
     const selectedPredefinedSection = selectedSectionData ? themeConfig.predefinedSections.find(ps => ps.type === selectedSectionData.type) : null;
 
-    const renderField = (field, section) => { /* ... (unchanged) ... */
+    const renderField = (field, section) => {
         const value = section.settings[field.name] !== undefined ? section.settings[field.name] : (predefinedSection.defaultSettings && predefinedSection.defaultSettings[field.name] !== undefined ? predefinedSection.defaultSettings[field.name] : '');
         const inputId = `${field.name}-${section.id}`;
-        const predefinedSection = themeConfig.predefinedSections.find(ps => ps.type === section.type);
+        const predefinedSection = themeConfig.predefinedSections.find(ps => ps.type === section.type); // Ensure this is in scope
 
         switch(field.type) {
             case 'text': return h('input', { type: field.inputType || 'text', id: inputId, value: value, onInput: (e) => handleSectionSettingChange(field.name, e.target.value), placeholder: field.placeholder || '' });
@@ -643,34 +704,29 @@ function ThemeBuilderPage({ router }) {
             case 'select': return h('select', { id: inputId, value: value, onChange: (e) => handleSectionSettingChange(field.name, e.target.value) },
                 (field.options || []).map(opt => h('option', { value: typeof opt === 'object' ? opt.value : opt }, typeof opt === 'object' ? opt.label : opt))
             );
+            case 'richtext': return h(RichTextEditor, { // Integrate RichTextEditor
+                content: value,
+                onChange: (newHtml) => handleSectionSettingChange(field.name, newHtml),
+                placeholder: field.placeholder || 'Enter content...'
+            });
             default: return h('input', { type: 'text', id: inputId, value: value, onInput: (e) => handleSectionSettingChange(field.name, e.target.value) });
         }
     };
 
     const gs = themeConfig.globalStyles;
-
     const viewportWidths = { desktop: '100%', tablet: '768px', mobile: '375px' };
 
     return h('div', { class: 'theme-builder-page' },
         h('div', {class: 'theme-builder-header'},
             h('h1', {}, 'Theme Builder'),
-            h('div', {class: 'viewport-switcher'},
-                ['desktop', 'tablet', 'mobile'].map(vp =>
-                    h('button', {
-                        class: `viewport-btn ${currentViewport === vp ? 'active' : ''}`,
-                        onClick: () => setCurrentViewport(vp)
-                    }, vp.charAt(0).toUpperCase() + vp.slice(1))
-                )
-            ),
+            h('div', {class: 'viewport-switcher'}, ['desktop', 'tablet', 'mobile'].map(vp => h('button', { class: `viewport-btn ${currentViewport === vp ? 'active' : ''}`, onClick: () => setCurrentViewport(vp) }, vp.charAt(0).toUpperCase() + vp.slice(1)))),
             h('button', { class: 'button-primary', onClick: handleSaveTheme, disabled: isLoading }, isLoading ? 'Saving...' : 'Save Theme Settings')
         ),
         message && h('p', { class: `theme-builder-message ${message.startsWith('Error') ? 'login-error' : 'success-message'}` }, message),
         h('div', { class: 'theme-builder-layout' },
             h('aside', { class: 'theme-controls-panel glassmorphic' },
-                // ... (Global Styles, Palette, Typography, Section Palette - existing JSX) ...
                 h('div', {class: 'control-panel-segment'},
-                    h('h2', {}, 'Global Styles'),
-                    h('h3', {}, 'Color Palette (OKLCH)'),
+                    h('h2', {}, 'Global Styles'), h('h3', {}, 'Color Palette (OKLCH)'),
                     Object.keys(gs.palette || defaultPalette).map(colorName =>
                         h('div', {class: 'form-group palette-editor-item'},
                             h('label', {for: `palette-${colorName}`}, colorName.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())),
@@ -681,53 +737,22 @@ function ThemeBuilderPage({ router }) {
                             )
                         )
                     ),
-                    h('hr'),
-                    h('h3', {}, 'Typography'),
+                    h('hr'), h('h3', {}, 'Typography'),
                     h('div', { class: 'form-group' }, h('label', { for: 'baseFontFamily' }, 'Base Font'), h('select', { id: 'baseFontFamily', value: gs.baseFontFamily, onChange: (e) => handleGlobalStyleChange('baseFontFamily', e.target.value) }, availableFonts.map(font => h('option', { value: font }, font)))),
                     h('div', { class: 'form-group' }, h('label', { for: 'headingFontFamily' }, 'Heading Font'), h('select', { id: 'headingFontFamily', value: gs.headingFontFamily, onChange: (e) => handleGlobalStyleChange('headingFontFamily', e.target.value) }, availableFonts.map(font => h('option', { value: font }, font)))),
-                    h('div', { class: 'form-group' },
-                        h('label', {}, 'Font Subsets (for Google Fonts)'),
-                        h('div', {class: 'checkbox-group'}, availableSubsets.map(subset =>
-                            h('label', {class: 'checkbox-label', key: subset},
-                                h('input', {type: 'checkbox', value: subset, checked: (gs.fontSubsets || []).includes(subset), onChange: e => handleFontSubsetChange(subset, e.target.checked)}),
-                                subset
-                            )
-                        ))
-                    ),
-                    h('div', { class: 'form-group' }, h('label', { for: 'customCss' }, 'Custom CSS'), h('textarea', { id: 'customCss', value: gs.customCss, rows:5, onInput: (e) => handleGlobalStyleChange('customCss', e.target.value) }))
+                    h('div', { class: 'form-group' }, h('label', {}, 'Font Subsets (for Google Fonts)'), h('div', {class: 'checkbox-group'}, availableSubsets.map(subset => h('label', {class: 'checkbox-label', key: subset}, h('input', {type: 'checkbox', value: subset, checked: (gs.fontSubsets || []).includes(subset), onChange: e => handleFontSubsetChange(subset, e.target.checked)}), subset)))),
+                    h('div', { class: 'form-group' }, h('label', { for: 'customCss' }, 'Custom CSS'), h('textarea', { id: 'customCss', value: gs.customCss, rows:5, onInput: (e) => handleGlobalStyleChange('customCss', e.target.value), placeholder: "/* For advanced users */" }))
                 ),
                 h('hr'),
-                h('div', {class: 'control-panel-segment'},
-                    h('h2', {}, 'Sections Palette'),
-                    h('div', { id: 'section-palette', class: 'section-palette', ref: paletteRef },
-                        themeConfig.predefinedSections.map(section => h('div', { class: 'palette-item card', 'data-section-type': section.type }, h('strong', {}, section.name), h('p', {class: 'palette-item-desc'}, section.description || '')))
-                    )
-                ),
-                 h('hr'),
+                h('div', {class: 'control-panel-segment'}, h('h2', {}, 'Sections Palette'), h('div', { id: 'section-palette', class: 'section-palette', ref: paletteRef }, themeConfig.predefinedSections.map(section => h('div', { class: 'palette-item card', 'data-section-type': section.type }, h('strong', {}, section.name), h('p', {class: 'palette-item-desc'}, section.description || ''))))),
+                h('hr'),
                 h('div', {class: 'control-panel-segment section-settings-editor'},
                     h('h2', {}, 'Section Settings'),
                     selectedSectionData && selectedPredefinedSection ?
-                        h('div', {},
-                            h('h3', {}, selectedPredefinedSection.name),
-                            selectedPredefinedSection.fields.map(field =>
-                                h('div', { class: 'form-group', key: `${selectedSectionData.id}-${field.name}` },
-                                    h('label', { for: `${field.name}-${selectedSectionData.id}` }, field.label),
-                                    renderField(field, selectedSectionData)
-                                )
-                            ),
-                            // Responsive Settings for Selected Section
-                            h('h4', {style: {marginTop: '20px', paddingTop:'15px', borderTop:'1px solid var(--border-glass)'}}, 'Responsive Visibility'),
-                            ['desktop', 'tablet', 'mobile'].map(vp =>
-                                h('div', {class: 'checkbox-label', key: vp},
-                                    h('input', {
-                                        type: 'checkbox',
-                                        id: `visibility-${vp}-${selectedSectionData.id}`,
-                                        checked: selectedSectionData.responsive?.[vp]?.visible !== false, // Default to true if undefined
-                                        onChange: e => handleResponsiveSettingChange(vp, 'visible', e.target.checked)
-                                    }),
-                                    `Visible on ${vp.charAt(0).toUpperCase() + vp.slice(1)}`
-                                )
-                            )
+                        h('div', {}, h('h3', {}, selectedPredefinedSection.name),
+                            selectedPredefinedSection.fields.map(field => h('div', { class: 'form-group', key: `${selectedSectionData.id}-${field.name}` }, h('label', { for: `${field.name}-${selectedSectionData.id}` }, field.label), renderField(field, selectedSectionData))),
+                            h('h4', {}, 'Responsive Visibility'),
+                            ['desktop', 'tablet', 'mobile'].map(vp => h('div', {class: 'checkbox-label responsive-visibility-checkbox', key: vp}, h('input', {type: 'checkbox', id: `visibility-${vp}-${selectedSectionData.id}`, checked: selectedSectionData.responsive?.[vp]?.visible !== false, onChange: e => handleResponsiveSettingChange(vp, 'visible', e.target.checked)}), `Visible on ${vp.charAt(0).toUpperCase() + vp.slice(1)}`))
                         ) :
                         h('p', {class: 'wizard-note'}, 'Select a section from the page layout to edit its properties.')
                 )
@@ -735,15 +760,12 @@ function ThemeBuilderPage({ router }) {
             h('main', { class: 'theme-preview-canvas', style: { width: viewportWidths[currentViewport], maxWidth: '100%' } },
                 h('style', { id: 'theme-builder-dynamic-styles' }, generatePreviewGlobalStyles()),
                 h('div', { class: 'live-preview-area'},
-                    h('h2', {}, `Editing Layout: ${themeConfig.pages[activePageLayout]?.name || 'Selected Layout'} (${currentViewport})`),
+                    h('h2', {}, `Layout: ${themeConfig.pages[activePageLayout]?.name || 'N/A'} (${currentViewport})`),
                     h('div', { id: 'page-sections-list', class: 'page-sections-dropzone', ref: pageSectionsRef },
                         currentSections.length > 0 ? currentSections.map((section) =>
-                            h('div', {
-                                class: `page-section-item-wrapper ${selectedSectionId === section.id ? 'selected' : ''}`,
-                                onClick: () => setSelectedSectionId(section.id)
-                            },
+                            h('div', { class: `page-section-item-wrapper ${selectedSectionId === section.id ? 'selected' : ''}`, onClick: () => setSelectedSectionId(section.id)},
                                 h('div', {class:'drag-handle-wrapper'}, h('span', { class: 'drag-handle' }, '☰ ')),
-                                renderSectionPreview(section, themeConfig.globalStyles, currentViewport) // Pass currentViewport
+                                renderSectionPreview(section, themeConfig.globalStyles, currentViewport)
                             )
                         ) : h('p', {class: 'dropzone-placeholder'}, 'Drag sections from the palette here.')
                     )
@@ -764,9 +786,10 @@ class Layout extends Component { /* ... (existing Layout component code - unchan
 }
 
 // --- Main App Component ---
-class App extends Component { /* ... (existing App component code - unchanged routing, state) ... */
+class App extends Component { /* ... (existing App component code - unchanged) ... */
     constructor(props) {
         super(props);
+        this.router = new Navigo('/admin', { hash: true });
         this.state = {
             isAuthenticated: false,
             needsSetup: false,
@@ -920,7 +943,7 @@ function hexToOklch(hexString, fallbackOklch) { /* ... (unchanged) ... */
 const appRoot = document.getElementById('admin-app');
 if (appRoot) {
     render(h(App), appRoot);
-    console.log("Admin SPA Initialized with Preact, Navigo, Dexie (db.js). Theme Builder responsive controls added.");
+    console.log("Admin SPA Initialized with Preact, Navigo, Dexie (db.js). RichTextEditor integrated into ThemeBuilder.");
 } else {
     console.error("Admin app root element (#admin-app) not found.");
 }
