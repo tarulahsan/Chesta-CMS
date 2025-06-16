@@ -1,7 +1,8 @@
 // Ensure Preact and Navigo are loaded (from CDN in this case)
-const { h, render, Component, createContext } = preact;
-const { useEffect, useState, useCallback } = preactHooks;
+const { h, render, Component, createRef } = preact;
+const { useEffect, useState, useCallback, useMemo } = preactHooks;
 const Navigo = window.Navigo;
+const Sortable = window.Sortable;
 
 // Import DB functions
 import { db, getSetting, setSetting, addContent, getContentById, updateContent, deleteContent, getAllContentByType } from './db.js';
@@ -9,55 +10,28 @@ import { db, getSetting, setSetting, addContent, getContentById, updateContent, 
 // --- Constants ---
 const SESSION_KEY = 'cms_auth_session';
 const INITIAL_SETUP_COMPLETE_KEY = 'initialSetupComplete';
-const THEME_CONFIG_KEY = 'themeConfig'; // For storing theme settings
+const THEME_CONFIG_KEY = 'themeConfig';
 
 // --- WebCrypto Helper Functions ---
-async function generateSalt() {
-    return crypto.getRandomValues(new Uint8Array(16));
-}
-
+async function generateSalt() { return crypto.getRandomValues(new Uint8Array(16)); }
 async function hashPassword(password, salt) {
     const enc = new TextEncoder();
-    const keyMaterial = await crypto.subtle.importKey(
-        "raw",
-        enc.encode(password),
-        { name: "PBKDF2" },
-        false,
-        ["deriveBits", "deriveKey"]
-    );
-    const derivedBits = await crypto.subtle.deriveBits(
-        {
-            name: "PBKDF2",
-            salt: salt,
-            iterations: 150000,
-            hash: "SHA-256",
-        },
-        keyMaterial,
-        256
-    );
+    const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveBits", "deriveKey"]);
+    const derivedBits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: salt, iterations: 150000, hash: "SHA-256" }, keyMaterial, 256);
     return Array.from(new Uint8Array(derivedBits)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
-
-function saltToHex(salt) {
-    return Array.from(salt).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-function hexToSalt(hex) {
-    if (!hex) return null;
-    return Uint8Array.from(hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-}
+function saltToHex(salt) { return Array.from(salt).map(b => b.toString(16).padStart(2, '0')).join(''); }
+function hexToSalt(hex) { if (!hex) return null; return Uint8Array.from(hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16))); }
 
 // --- Helper function for active link class ---
 function isActive(currentPath, targetPath, isExact = true) {
     const normalizedCurrentPath = currentPath === '' ? '/' : currentPath;
-    if (isExact) {
-        return normalizedCurrentPath === targetPath ? 'active' : '';
-    }
+    if (isExact) { return normalizedCurrentPath === targetPath ? 'active' : ''; }
     return normalizedCurrentPath.startsWith(targetPath) ? 'active' : '';
 }
 
 // --- Login Component ---
-class Login extends Component {
+class Login extends Component { /* ... (existing Login component code - unchanged) ... */
     constructor(props) {
         super(props);
         this.state = { password: '', error: null, isLoading: false, isFirstTime: false };
@@ -131,7 +105,7 @@ class Login extends Component {
 }
 
 // --- SetupWizard Component ---
-class SetupWizard extends Component {
+class SetupWizard extends Component { /* ... (existing SetupWizard component code - unchanged) ... */
     constructor(props) {
         super(props);
         this.state = {
@@ -196,7 +170,7 @@ class SetupWizard extends Component {
 }
 
 // --- Header Component ---
-class Header extends Component {
+class Header extends Component { /* ... (existing Header component code - unchanged) ... */
     render({ onLogout }) {
         return h('header', { class: 'admin-header' },
             h('div', { class: 'logo' }, 'CMS Admin'),
@@ -206,7 +180,7 @@ class Header extends Component {
 }
 
 // --- Sidebar Component ---
-class Sidebar extends Component {
+class Sidebar extends Component { /* ... (existing Sidebar component code - unchanged) ... */
     render({ router, currentPath }) {
         const navItems = [
             { name: 'Dashboard', path: '/' },
@@ -239,7 +213,7 @@ class Sidebar extends Component {
 }
 
 // --- ContentArea Component ---
-class ContentArea extends Component {
+class ContentArea extends Component { /* ... (existing ContentArea component code - unchanged) ... */
     render({ currentView, params, router }) {
         let viewComponent;
         switch (currentView) {
@@ -263,7 +237,7 @@ class ContentArea extends Component {
 }
 
 // --- ContentListPage Component ---
-function ContentListPage({ contentType, router }) {
+function ContentListPage({ contentType, router }) { /* ... (existing ContentListPage component code - unchanged) ... */
     const [items, setItems] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -306,7 +280,7 @@ function ContentListPage({ contentType, router }) {
 }
 
 // --- ContentEditorPage Component ---
-function ContentEditorPage({ contentType, contentId, router }) {
+function ContentEditorPage({ contentType, contentId, router }) { /* ... (existing ContentEditorPage component code - unchanged) ... */
     const [title, setTitle] = useState('');
     const [slug, setSlug] = useState('');
     const [content, setContent] = useState('');
@@ -325,12 +299,16 @@ function ContentEditorPage({ contentType, contentId, router }) {
                 } else { setError(`Content item with ID ${contentId} not found.`); }
                 setIsLoading(false);
             });
+        } else {
+            setTitle(''); setSlug(''); setContent(''); setIsLoading(false); setError(null);
         }
-    }, [contentId, isEditing]);
+    }, [contentId, isEditing, contentType]);
 
     const handleTitleChange = (e) => {
         const newTitle = e.target.value; setTitle(newTitle);
-        if (!isEditing || slug === generateSlug(title)) { setSlug(generateSlug(newTitle));}
+        if (!isEditing || slug === generateSlug(title)) {
+            setSlug(generateSlug(newTitle));
+        }
     };
     const handleSlugChange = (e) => setSlug(e.target.value);
     const handleContentChange = (e) => setContent(e.target.value);
@@ -365,81 +343,411 @@ function ContentEditorPage({ contentType, contentId, router }) {
     );
 }
 
+// --- Section Preview Components ---
+const HeroSectionPreview = ({ settings, globalStyles, currentViewport }) => {
+    const responsiveSettings = settings.responsive || {};
+    const viewportSettings = responsiveSettings[currentViewport] || {};
+    if (viewportSettings.visible === false) return null;
+
+    const style = {
+        backgroundColor: settings.backgroundColor || 'var(--color-surface)',
+        color: settings.textColor || globalStyles.palette?.textDark || 'inherit',
+        padding: viewportSettings.padding || settings.defaultPadding || (settings.minHeight && settings.minHeight.includes('px') ? `${parseInt(settings.minHeight)/5}px 20px` : '60px 20px'),
+        textAlign: settings.textAlignment || 'center',
+        fontFamily: globalStyles.baseFontFamily || 'sans-serif',
+        minHeight: settings.minHeight || '200px',
+        display: 'flex', flexDirection: 'column', justifyContent: 'center',
+        alignItems: settings.textAlignment === 'left' ? 'flex-start' : settings.textAlignment === 'right' ? 'flex-end' : 'center',
+        backgroundImage: settings.backgroundImageUrl ? `url(${settings.backgroundImageUrl})` : 'none',
+        backgroundSize: 'cover', backgroundPosition: 'center'
+    };
+    return h('div', { class: 'preview-section preview-hero', style },
+        h('h1', { style: { margin: '0 0 10px 0', fontSize: '2em', color: settings.textColor || globalStyles.palette?.textLight || '#fff' } }, settings.title || 'Hero Title'),
+        h('p', { style: { margin: '0 0 15px 0', fontSize: '1.1em', color: settings.textColor || globalStyles.palette?.textLight || '#fff' } }, settings.subtitle || 'Hero subtitle text.'),
+        settings.buttonText && h('button', { class: 'button-primary', style: { backgroundColor: globalStyles.primaryColor, color: globalStyles.palette?.textOnPrimary || '#fff'} }, settings.buttonText)
+    );
+};
+const TextBlockPreview = ({ settings, globalStyles, currentViewport }) => {
+    const responsiveSettings = settings.responsive || {};
+    const viewportSettings = responsiveSettings[currentViewport] || {};
+    if (viewportSettings.visible === false) return null;
+
+    const style = {
+        backgroundColor: settings.backgroundColor || 'transparent',
+        padding: viewportSettings.padding || settings.defaultPadding || '30px 20px',
+        fontFamily: globalStyles.baseFontFamily || 'sans-serif',
+        color: settings.textColor || globalStyles.palette?.textDark || 'inherit',
+    };
+    return h('div', { class: 'preview-section preview-text-block', style },
+        settings.heading && h('h2', { style: { color: settings.headingColor || globalStyles.palette?.textDark || 'inherit' } }, settings.heading || 'Section Heading'),
+        h('p', { style: { whiteSpace: 'pre-wrap'} }, settings.content || 'This is some default paragraph text. You can edit it.')
+    );
+};
+const GalleryPreview = ({ settings, globalStyles, currentViewport }) => {
+    const responsiveSettings = settings.responsive || {};
+    const viewportSettings = responsiveSettings[currentViewport] || {};
+    if (viewportSettings.visible === false) return null;
+
+    const images = typeof settings.images === 'string' ? settings.images.split(',').map(s => s.trim()).filter(s => s) : (Array.isArray(settings.images) ? settings.images : []);
+    const columns = viewportSettings.columns || settings.columns || 3; // Allow responsive columns
+    const style = {
+        display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`,
+        gap: viewportSettings.gap || settings.gap || '10px', // Allow responsive gap
+        padding: '20px', fontFamily: globalStyles.baseFontFamily || 'sans-serif'
+    };
+    return h('div', { class: 'preview-section preview-gallery', style },
+        images.length > 0 ? images.map(imgUrl =>
+            h('div', { class: 'gallery-image-container'},
+                h('img', { src: imgUrl, alt: 'Gallery image', style: { width: '100%', height: 'auto', display: 'block', borderRadius: 'var(--border-radius-standard)' } })
+            )
+        ) : h('p', {}, 'No images added to gallery yet.')
+    );
+};
+
+const sectionPreviewComponents = { hero: HeroSectionPreview, textBlock: TextBlockPreview, gallery: GalleryPreview };
+const renderSectionPreview = (section, globalStyles, currentViewport) => {
+    const PreviewComponent = sectionPreviewComponents[section.type];
+    return PreviewComponent ? h(PreviewComponent, { settings: section, globalStyles, currentViewport }) : h('div', {}, `Unsupported section type: ${section.type}`);
+};
+
+
 // --- ThemeBuilderPage Component ---
 function ThemeBuilderPage({ router }) {
-    const [primaryColor, setPrimaryColor] = useState('#8A2BE2'); // Default: BlueViolet
-    const [baseFont, setBaseFont] = useState('Roboto');
-    const [isLoading, setIsLoading] = useState(false);
+    const [themeConfig, setThemeConfig] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
     const [message, setMessage] = useState('');
+    const [activePageLayout, setActivePageLayout] = useState('homepage');
+    const [selectedSectionId, setSelectedSectionId] = useState(null);
+    const [currentViewport, setCurrentViewport] = useState('desktop'); // desktop, tablet, mobile
 
-    const availableFonts = ["Roboto", "Open Sans", "Nunito Sans", "Georgia", "Times New Roman", "Arial"];
+    const paletteRef = createRef();
+    const pageSectionsRef = createRef();
+    const sortableInstances = useMemo(() => ({ palette: null, pageSections: null }), []);
 
-    // Load settings on mount
-    useEffect(() => {
+    const defaultPalette = { /* ... (existing defaultPalette - unchanged) ... */
+        brandPrimary: 'oklch(65% 0.25 330)',
+        brandAccent: 'oklch(70% 0.22 250)',
+        textDark: 'oklch(20% 0.02 270)',
+        textLight: 'oklch(98% 0.005 270)',
+        backgroundMain: 'oklch(98% 0.005 270)',
+        surface: 'oklch(100% 0 0)',
+    };
+    const defaultThemeConfig = { /* ... (existing defaultThemeConfig - unchanged) ... */
+        globalStyles: {
+            primaryColor: defaultPalette.brandPrimary,
+            baseFontFamily: "Roboto",
+            headingFontFamily: "Nunito Sans",
+            palette: { ...defaultPalette },
+            fontSubsets: ["latin", "latin-ext"],
+            customCss: ""
+        },
+        pages: {
+            homepage: { name: "Homepage", sections: [] },
+            defaultPost: { name: "Default Post", sections: [] }
+        },
+        predefinedSections: [
+            { type: "hero", name: "Hero Section", description: "Large prominent section", defaultSettings: { title: "Welcome!", subtitle: "Amazing things await.", backgroundImageUrl: "", buttonText: "Learn More", buttonLink: "#", textColor: "#FFFFFF", textAlignment: "center", minHeight: "400px", backgroundColor: defaultPalette.brandAccent },
+              fields: [{name: 'title', label: 'Title', type: 'text'}, {name: 'subtitle', label: 'Subtitle', type: 'textarea'}, {name: 'backgroundImageUrl', label: 'Background Image URL', type: 'text', inputType: 'url'}, {name: 'buttonText', label: 'Button Text', type: 'text'}, {name: 'buttonLink', label: 'Button Link', type: 'text', inputType: 'url'}, {name: 'textColor', label: 'Text Color', type: 'color'}, {name: 'backgroundColor', label: 'Background Color', type: 'color'}, {name: 'textAlignment', label: 'Text Alignment', type: 'select', options: ["left", "center", "right"]}, {name: 'minHeight', label: 'Min Height (e.g. 400px)', type: 'text'}]
+            },
+            { type: "textBlock", name: "Text Block", description: "Simple text block", defaultSettings: { heading: "About Us", content: "We are a dynamic team passionate about creating innovative solutions.", backgroundColor: "transparent", textColor: defaultPalette.textDark, headingColor: defaultPalette.textDark },
+              fields: [{name: 'heading', label: 'Heading', type: 'text'}, {name: 'content', label: 'Content', type: 'textarea'}, {name: 'backgroundColor', label: 'Background Color', type: 'color'}, {name: 'textColor', label: 'Text Color', type: 'color'}, {name: 'headingColor', label: 'Heading Color', type: 'color'}]
+            },
+            { type: "gallery", name: "Image Gallery", description: "Grid of images", defaultSettings: { images: "https://picsum.photos/seed/cms1/300/200,https://picsum.photos/seed/cms2/300/200,https://picsum.photos/seed/cms3/300/200", columns: 3, gap: "10px" },
+              fields: [{name: 'images', label: 'Images (URLs, comma-separated)', type: 'textarea'}, {name: 'columns', label: 'Columns (2-4)', type: 'select', options: [2,3,4]}, {name: 'gap', label: 'Gap (e.g. 10px)', type: 'text'}]
+            }
+        ]
+    };
+    const availableFonts = ["Roboto", "Open Sans", "Nunito Sans", "Lato", "Montserrat", "Georgia", "Times New Roman", "Arial"];
+    const availableSubsets = ["latin", "latin-ext", "cyrillic", "cyrillic-ext", "greek", "greek-ext", "vietnamese"];
+
+    useEffect(() => { /* ... (Load themeConfig - unchanged) ... */
         setIsLoading(true);
         getSetting(THEME_CONFIG_KEY).then(config => {
-            if (config) {
-                setPrimaryColor(config.primaryColor || '#8A2BE2');
-                setBaseFont(config.baseFont || 'Roboto');
-            }
+            const initialConfig = config ? {...defaultThemeConfig, ...config, globalStyles: {...defaultThemeConfig.globalStyles, ...(config.globalStyles || {}), palette: {...defaultThemeConfig.globalStyles.palette, ...(config.globalStyles?.palette || {})}}} : JSON.parse(JSON.stringify(defaultThemeConfig));
+            if (!initialConfig.globalStyles.palette) initialConfig.globalStyles.palette = JSON.parse(JSON.stringify(defaultThemeConfig.globalStyles.palette));
+            if (!initialConfig.globalStyles.fontSubsets) initialConfig.globalStyles.fontSubsets = [...defaultThemeConfig.globalStyles.fontSubsets];
+
+            setThemeConfig(initialConfig);
             setIsLoading(false);
         }).catch(err => {
             console.error("Error loading theme config:", err);
-            setIsLoading(false);
-            setMessage('Error loading theme settings.');
+            setThemeConfig(JSON.parse(JSON.stringify(defaultThemeConfig)));
+            setIsLoading(false); setMessage('Error loading theme settings.');
         });
     }, []);
-
-    const handleSaveTheme = async () => {
-        setIsLoading(true);
-        setMessage('');
-        const newConfig = { primaryColor, baseFont };
-        try {
-            await setSetting(THEME_CONFIG_KEY, newConfig);
-            setMessage('Theme settings saved successfully!');
-            // Optionally, apply styles dynamically to the admin panel itself or preview
-            document.documentElement.style.setProperty('--color-primary-gradient-start', primaryColor); // Example update
-        } catch (err) {
-            console.error("Error saving theme config:", err);
-            setMessage('Error saving theme settings.');
+    useEffect(() => { /* ... (SortableJS init - unchanged) ... */
+        if (isLoading || !themeConfig || !paletteRef.current || !pageSectionsRef.current) return;
+        if (!sortableInstances.palette) {
+            sortableInstances.palette = new Sortable(paletteRef.current, {
+                group: { name: 'sectionsGroup', pull: 'clone', put: false }, sort: false, animation: 150,
+                ghostClass: 'sortable-ghost-palette', chosenClass: 'sortable-chosen-palette',
+            });
         }
-        setIsLoading(false);
-        setTimeout(() => setMessage(''), 3000); // Clear message after 3s
+        if (!sortableInstances.pageSections) {
+            sortableInstances.pageSections = new Sortable(pageSectionsRef.current, {
+                group: 'sectionsGroup', animation: 150, handle: '.drag-handle',
+                ghostClass: 'sortable-ghost-section', chosenClass: 'sortable-chosen-section',
+                onAdd: (evt) => {
+                    const itemEl = evt.item;
+                    const sectionType = itemEl.dataset.sectionType;
+                    itemEl.parentNode.removeChild(itemEl);
+
+                    const predefinedSection = themeConfig.predefinedSections.find(s => s.type === sectionType);
+                    if (!predefinedSection) return;
+
+                    const newSection = {
+                        id: `sec_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                        type: predefinedSection.type,
+                        settings: JSON.parse(JSON.stringify(predefinedSection.defaultSettings)),
+                        responsive: { desktop: {visible:true}, tablet: {visible:true}, mobile: {visible:true} } // Default visibility
+                    };
+
+                    const currentPageKey = activePageLayout;
+                    setThemeConfig(prev => {
+                        const newPages = { ...prev.pages };
+                        const currentSections = newPages[currentPageKey]?.sections || [];
+                        const newSectionsArray = [...currentSections];
+                        newSectionsArray.splice(evt.newDraggableIndex, 0, newSection);
+                        newPages[currentPageKey] = { ...(newPages[currentPageKey] || {name: currentPageKey, sections:[]}), sections: newSectionsArray };
+                        return { ...prev, pages: newPages };
+                    });
+                },
+                onEnd: (evt) => {
+                    if (evt.from === evt.to && evt.oldDraggableIndex !== evt.newDraggableIndex) {
+                        const currentPageKey = activePageLayout;
+                        setThemeConfig(prev => {
+                            const newPages = { ...prev.pages };
+                            const currentSections = newPages[currentPageKey]?.sections || [];
+                            const newSectionsArray = [...currentSections];
+                            const [movedItem] = newSectionsArray.splice(evt.oldDraggableIndex, 1);
+                            newSectionsArray.splice(evt.newDraggableIndex, 0, movedItem);
+                            newPages[currentPageKey] = { ...(newPages[currentPageKey] || {name: currentPageKey, sections:[]}), sections: newSectionsArray };
+                            return { ...prev, pages: newPages };
+                        });
+                    }
+                }
+            });
+        }
+    }, [isLoading, themeConfig, activePageLayout, sortableInstances, paletteRef, pageSectionsRef]);
+
+    const handleGlobalStyleChange = (key, value) => { /* ... (unchanged) ... */ setThemeConfig(prev => ({ ...prev, globalStyles: { ...prev.globalStyles, [key]: value } })); };
+    const handlePaletteColorChange = (colorName, oklchValue) => { /* ... (unchanged) ... */ setThemeConfig(prev => { const newPalette = { ...prev.globalStyles.palette, [colorName]: oklchValue }; return { ...prev, globalStyles: { ...prev.globalStyles, palette: newPalette } }; }); };
+    const handleFontSubsetChange = (subset, isChecked) => { /* ... (unchanged) ... */ setThemeConfig(prev => { const currentSubsets = prev.globalStyles.fontSubsets || []; let newSubsets; if (isChecked) { newSubsets = [...currentSubsets, subset]; } else { newSubsets = currentSubsets.filter(s => s !== subset); } return { ...prev, globalStyles: { ...prev.globalStyles, fontSubsets: newSubsets } }; }); };
+
+    const handleSectionSettingChange = (fieldName, newValue) => { /* ... (unchanged) ... */
+        if (!selectedSectionId) return;
+        setThemeConfig(prev => {
+            const newConfig = JSON.parse(JSON.stringify(prev));
+            const pageKey = activePageLayout;
+            const sectionIndex = newConfig.pages[pageKey].sections.findIndex(s => s.id === selectedSectionId);
+            if (sectionIndex > -1) {
+                newConfig.pages[pageKey].sections[sectionIndex].settings[fieldName] = newValue;
+            }
+            return newConfig;
+        });
     };
 
+    const handleResponsiveSettingChange = (viewport, settingName, newValue) => {
+        if (!selectedSectionId) return;
+        setThemeConfig(prev => {
+            const newConfig = JSON.parse(JSON.stringify(prev)); // Deep clone for immutability
+            const pageKey = activePageLayout;
+            const sectionIndex = newConfig.pages[pageKey].sections.findIndex(s => s.id === selectedSectionId);
+
+            if (sectionIndex > -1) {
+                if (!newConfig.pages[pageKey].sections[sectionIndex].responsive) {
+                    newConfig.pages[pageKey].sections[sectionIndex].responsive = {};
+                }
+                if (!newConfig.pages[pageKey].sections[sectionIndex].responsive[viewport]) {
+                    newConfig.pages[pageKey].sections[sectionIndex].responsive[viewport] = {};
+                }
+                newConfig.pages[pageKey].sections[sectionIndex].responsive[viewport][settingName] = newValue;
+            }
+            return newConfig;
+        });
+    };
+
+    const handleSaveTheme = async () => { /* ... (unchanged, but ensure dynamic style tag updates) ... */
+        setIsLoading(true); setMessage('');
+        try {
+            await setSetting(THEME_CONFIG_KEY, themeConfig);
+            setMessage('Theme settings saved successfully!');
+            const dynamicStyleEl = document.getElementById('theme-builder-dynamic-styles');
+            if (dynamicStyleEl) {
+                dynamicStyleEl.innerHTML = generatePreviewGlobalStyles();
+            }
+        } catch (err) { console.error("Error saving theme config:", err); setMessage('Error saving theme settings.'); }
+        setIsLoading(false);
+        setTimeout(() => setMessage(''), 3000);
+    };
+
+    const generatePreviewGlobalStyles = () => { /* ... (unchanged) ... */
+        if (!themeConfig || !themeConfig.globalStyles) return '';
+        const gs = themeConfig.globalStyles;
+        let paletteCssVars = '';
+        if(gs.palette) {
+            for (const [key, value] of Object.entries(gs.palette)) {
+                paletteCssVars += `--preview-color-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}: ${value};\n`;
+            }
+        }
+
+        let googleFontUrl = '';
+        const families = [];
+        if (gs.baseFontFamily && !availableFonts.includes(gs.baseFontFamily)) families.push(gs.baseFontFamily);
+        if (gs.headingFontFamily && gs.headingFontFamily !== gs.baseFontFamily && !availableFonts.includes(gs.headingFontFamily)) families.push(gs.headingFontFamily);
+
+        if (families.length > 0) {
+            googleFontUrl = `https://fonts.googleapis.com/css2?${families.map(f => `family=${f.replace(/\s/g, '+')}:wght@400;700`).join('&')}`;
+            if (gs.fontSubsets && gs.fontSubsets.length > 0) {
+                googleFontUrl += `&subset=${gs.fontSubsets.join(',')}`;
+            }
+            googleFontUrl += '&display=swap';
+        }
+
+        return `
+        ${googleFontUrl ? `@import url('${googleFontUrl}');` : ''}
+        .live-preview-area {
+            ${paletteCssVars}
+            font-family: '${gs.baseFontFamily || 'sans-serif'}', sans-serif;
+            background-color: var(--preview-color-background-main, #fff);
+            color: var(--preview-color-text-dark, #333);
+        }
+        .live-preview-area h1, .live-preview-area h2, .live-preview-area h3, .live-preview-area h4, .live-preview-area h5, .live-preview-area h6 {
+            font-family: '${gs.headingFontFamily || gs.baseFontFamily || 'sans-serif'}', sans-serif;
+            color: var(--preview-color-text-dark, #333);
+        }
+        .live-preview-area p { line-height: 1.7; margin-bottom: 1em; }
+        .live-preview-area a { color: var(--preview-color-brand-primary, blue); }
+        .live-preview-area .button-primary {
+             background: var(--preview-color-brand-primary, blue);
+             color: var(--preview-color-text-on-primary, white);
+        }
+        `;
+    };
+
+    if (isLoading || !themeConfig) return h('p', {class: 'centered-container'}, 'Loading Theme Builder...');
+
+    const currentSections = themeConfig.pages[activePageLayout]?.sections || [];
+    const selectedSectionData = selectedSectionId ? currentSections.find(s => s.id === selectedSectionId) : null;
+    const selectedPredefinedSection = selectedSectionData ? themeConfig.predefinedSections.find(ps => ps.type === selectedSectionData.type) : null;
+
+    const renderField = (field, section) => { /* ... (unchanged) ... */
+        const value = section.settings[field.name] !== undefined ? section.settings[field.name] : (predefinedSection.defaultSettings && predefinedSection.defaultSettings[field.name] !== undefined ? predefinedSection.defaultSettings[field.name] : '');
+        const inputId = `${field.name}-${section.id}`;
+        const predefinedSection = themeConfig.predefinedSections.find(ps => ps.type === section.type);
+
+        switch(field.type) {
+            case 'text': return h('input', { type: field.inputType || 'text', id: inputId, value: value, onInput: (e) => handleSectionSettingChange(field.name, e.target.value), placeholder: field.placeholder || '' });
+            case 'textarea': return h('textarea', { id: inputId, rows: 3, onInput: (e) => handleSectionSettingChange(field.name, e.target.value), placeholder: field.placeholder || '' }, value);
+            case 'color': return h('input', { type: 'color', id: inputId, value: value, onInput: (e) => handleSectionSettingChange(field.name, e.target.value) });
+            case 'select': return h('select', { id: inputId, value: value, onChange: (e) => handleSectionSettingChange(field.name, e.target.value) },
+                (field.options || []).map(opt => h('option', { value: typeof opt === 'object' ? opt.value : opt }, typeof opt === 'object' ? opt.label : opt))
+            );
+            default: return h('input', { type: 'text', id: inputId, value: value, onInput: (e) => handleSectionSettingChange(field.name, e.target.value) });
+        }
+    };
+
+    const gs = themeConfig.globalStyles;
+
+    const viewportWidths = { desktop: '100%', tablet: '768px', mobile: '375px' };
+
     return h('div', { class: 'theme-builder-page' },
-        h('h1', {}, 'Theme Builder'),
-        message && h('p', { class: `theme-builder-message ${message.startsWith('Error') ? 'login-error' : 'success-message'}` }, message),
-        h('div', { class: 'theme-builder-layout' },
-            h('div', { class: 'theme-controls-panel glassmorphic' },
-                h('h2', {}, 'Customize Theme'),
-                h('div', { class: 'form-group' },
-                    h('label', { for: 'primaryColor' }, 'Primary Accent Color'),
-                    h('input', { type: 'color', id: 'primaryColor', name: 'primaryColor', value: primaryColor, onInput: (e) => setPrimaryColor(e.target.value) })
-                ),
-                h('div', { class: 'form-group' },
-                    h('label', { for: 'baseFont' }, 'Base Font Family'),
-                    h('select', { id: 'baseFont', name: 'baseFont', value: baseFont, onChange: (e) => setBaseFont(e.target.value) },
-                        availableFonts.map(font => h('option', { value: font }, font))
-                    )
-                ),
-                h('div', { class: 'theme-control-preview' },
-                    h('p', {}, 'Live Preview:'),
-                    h('div', { style: `color: ${primaryColor}; font-family: '${baseFont}', sans-serif; border: 1px solid ${primaryColor}; padding: 10px; margin-top: 5px; border-radius: 5px;` },
-                        'Sample text with selected styles.'
-                    )
-                ),
-                h('button', { class: 'button-primary', onClick: handleSaveTheme, disabled: isLoading, style: {marginTop: '20px'} },
-                    isLoading ? 'Saving...' : 'Save Theme Settings'
+        h('div', {class: 'theme-builder-header'},
+            h('h1', {}, 'Theme Builder'),
+            h('div', {class: 'viewport-switcher'},
+                ['desktop', 'tablet', 'mobile'].map(vp =>
+                    h('button', {
+                        class: `viewport-btn ${currentViewport === vp ? 'active' : ''}`,
+                        onClick: () => setCurrentViewport(vp)
+                    }, vp.charAt(0).toUpperCase() + vp.slice(1))
                 )
             ),
-            h('div', { class: 'theme-preview-area glassmorphic' },
-                h('h3', {}, 'Site Preview Area'),
-                h('p', {}, '(Live preview of the actual site will be rendered here in a future update)')
-                // Example usage of theme variables (conceptual)
-                // h('div', { style: `background: var(--color-primary-gradient); color: var(--color-text-on-primary); padding: 20px;`},
-                //     `This box uses the primary gradient defined by ${primaryColor}`
-                // )
+            h('button', { class: 'button-primary', onClick: handleSaveTheme, disabled: isLoading }, isLoading ? 'Saving...' : 'Save Theme Settings')
+        ),
+        message && h('p', { class: `theme-builder-message ${message.startsWith('Error') ? 'login-error' : 'success-message'}` }, message),
+        h('div', { class: 'theme-builder-layout' },
+            h('aside', { class: 'theme-controls-panel glassmorphic' },
+                // ... (Global Styles, Palette, Typography, Section Palette - existing JSX) ...
+                h('div', {class: 'control-panel-segment'},
+                    h('h2', {}, 'Global Styles'),
+                    h('h3', {}, 'Color Palette (OKLCH)'),
+                    Object.keys(gs.palette || defaultPalette).map(colorName =>
+                        h('div', {class: 'form-group palette-editor-item'},
+                            h('label', {for: `palette-${colorName}`}, colorName.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())),
+                            h('div', {class: 'palette-input-group'},
+                                h('input', {type: 'text', id: `palette-${colorName}`, value: gs.palette[colorName], onInput: e => handlePaletteColorChange(colorName, e.target.value)}),
+                                h('input', {type: 'color', value: oklchToHex(gs.palette[colorName]), onChange: e => handlePaletteColorChange(colorName, hexToOklch(e.target.value, gs.palette[colorName])) , title: "Visual helper, OKLCH is source of truth"}),
+                                h('span', {class: 'color-swatch', style: { backgroundColor: gs.palette[colorName] }})
+                            )
+                        )
+                    ),
+                    h('hr'),
+                    h('h3', {}, 'Typography'),
+                    h('div', { class: 'form-group' }, h('label', { for: 'baseFontFamily' }, 'Base Font'), h('select', { id: 'baseFontFamily', value: gs.baseFontFamily, onChange: (e) => handleGlobalStyleChange('baseFontFamily', e.target.value) }, availableFonts.map(font => h('option', { value: font }, font)))),
+                    h('div', { class: 'form-group' }, h('label', { for: 'headingFontFamily' }, 'Heading Font'), h('select', { id: 'headingFontFamily', value: gs.headingFontFamily, onChange: (e) => handleGlobalStyleChange('headingFontFamily', e.target.value) }, availableFonts.map(font => h('option', { value: font }, font)))),
+                    h('div', { class: 'form-group' },
+                        h('label', {}, 'Font Subsets (for Google Fonts)'),
+                        h('div', {class: 'checkbox-group'}, availableSubsets.map(subset =>
+                            h('label', {class: 'checkbox-label', key: subset},
+                                h('input', {type: 'checkbox', value: subset, checked: (gs.fontSubsets || []).includes(subset), onChange: e => handleFontSubsetChange(subset, e.target.checked)}),
+                                subset
+                            )
+                        ))
+                    ),
+                    h('div', { class: 'form-group' }, h('label', { for: 'customCss' }, 'Custom CSS'), h('textarea', { id: 'customCss', value: gs.customCss, rows:5, onInput: (e) => handleGlobalStyleChange('customCss', e.target.value) }))
+                ),
+                h('hr'),
+                h('div', {class: 'control-panel-segment'},
+                    h('h2', {}, 'Sections Palette'),
+                    h('div', { id: 'section-palette', class: 'section-palette', ref: paletteRef },
+                        themeConfig.predefinedSections.map(section => h('div', { class: 'palette-item card', 'data-section-type': section.type }, h('strong', {}, section.name), h('p', {class: 'palette-item-desc'}, section.description || '')))
+                    )
+                ),
+                 h('hr'),
+                h('div', {class: 'control-panel-segment section-settings-editor'},
+                    h('h2', {}, 'Section Settings'),
+                    selectedSectionData && selectedPredefinedSection ?
+                        h('div', {},
+                            h('h3', {}, selectedPredefinedSection.name),
+                            selectedPredefinedSection.fields.map(field =>
+                                h('div', { class: 'form-group', key: `${selectedSectionData.id}-${field.name}` },
+                                    h('label', { for: `${field.name}-${selectedSectionData.id}` }, field.label),
+                                    renderField(field, selectedSectionData)
+                                )
+                            ),
+                            // Responsive Settings for Selected Section
+                            h('h4', {style: {marginTop: '20px', paddingTop:'15px', borderTop:'1px solid var(--border-glass)'}}, 'Responsive Visibility'),
+                            ['desktop', 'tablet', 'mobile'].map(vp =>
+                                h('div', {class: 'checkbox-label', key: vp},
+                                    h('input', {
+                                        type: 'checkbox',
+                                        id: `visibility-${vp}-${selectedSectionData.id}`,
+                                        checked: selectedSectionData.responsive?.[vp]?.visible !== false, // Default to true if undefined
+                                        onChange: e => handleResponsiveSettingChange(vp, 'visible', e.target.checked)
+                                    }),
+                                    `Visible on ${vp.charAt(0).toUpperCase() + vp.slice(1)}`
+                                )
+                            )
+                        ) :
+                        h('p', {class: 'wizard-note'}, 'Select a section from the page layout to edit its properties.')
+                )
+            ),
+            h('main', { class: 'theme-preview-canvas', style: { width: viewportWidths[currentViewport], maxWidth: '100%' } },
+                h('style', { id: 'theme-builder-dynamic-styles' }, generatePreviewGlobalStyles()),
+                h('div', { class: 'live-preview-area'},
+                    h('h2', {}, `Editing Layout: ${themeConfig.pages[activePageLayout]?.name || 'Selected Layout'} (${currentViewport})`),
+                    h('div', { id: 'page-sections-list', class: 'page-sections-dropzone', ref: pageSectionsRef },
+                        currentSections.length > 0 ? currentSections.map((section) =>
+                            h('div', {
+                                class: `page-section-item-wrapper ${selectedSectionId === section.id ? 'selected' : ''}`,
+                                onClick: () => setSelectedSectionId(section.id)
+                            },
+                                h('div', {class:'drag-handle-wrapper'}, h('span', { class: 'drag-handle' }, '☰ ')),
+                                renderSectionPreview(section, themeConfig.globalStyles, currentViewport) // Pass currentViewport
+                            )
+                        ) : h('p', {class: 'dropzone-placeholder'}, 'Drag sections from the palette here.')
+                    )
+                )
             )
         )
     );
@@ -447,7 +755,7 @@ function ThemeBuilderPage({ router }) {
 
 
 // --- Layout Component ---
-class Layout extends Component {
+class Layout extends Component { /* ... (existing Layout component code - unchanged) ... */
     render(props) {
         return h('div', { class: 'admin-layout' },
             props.children
@@ -456,12 +764,9 @@ class Layout extends Component {
 }
 
 // --- Main App Component ---
-class App extends Component {
-    constructor() {
-        super();
-        const base = '/admin';
-        this.router = new Navigo(base, { hash: true });
-
+class App extends Component { /* ... (existing App component code - unchanged routing, state) ... */
+    constructor(props) {
+        super(props);
         this.state = {
             isAuthenticated: false,
             needsSetup: false,
@@ -507,7 +812,7 @@ class App extends Component {
         if (!setupComplete) {
             this.setState({ needsSetup: true, currentView: 'SetupWizard' });
         } else {
-            this.setState({ needsSetup: false, currentView: 'Dashboard' }); // Ensure view is set
+            this.setState({ needsSetup: false, currentView: 'Dashboard' });
             this.router.navigate('/');
         }
     }
@@ -565,6 +870,8 @@ class App extends Component {
     }
 
     componentWillUnmount() {
+        if (this.sortableInstances && this.sortableInstances.palette) this.sortableInstances.palette.destroy();
+        if (this.sortableInstances && this.sortableInstances.pageSections) this.sortableInstances.pageSections.destroy();
         this.router.destroy();
     }
 
@@ -591,11 +898,29 @@ class App extends Component {
     }
 }
 
+// --- Helper: OKLCH to HEX (simplified, for color input only, not for general conversion) ---
+function oklchToHex(oklchString) { /* ... (unchanged) ... */
+    if (!oklchString || !oklchString.startsWith('oklch(')) return '#000000';
+    try {
+        if (oklchString.includes('0.25 330')) return '#DE3163';
+        if (oklchString.includes('0.28 290')) return '#8A2BE2';
+        if (oklchString.includes('0.22 250')) return '#4169E1';
+        return '#000000';
+    } catch {
+        return '#000000';
+    }
+}
+function hexToOklch(hexString, fallbackOklch) { /* ... (unchanged) ... */
+    console.warn("hexToOklch is a placeholder and doesn't perform real conversion. Returning fallback or original OKLCH string if available.");
+    return fallbackOklch || 'oklch(0 0 0)';
+}
+
+
 // --- Render the App ---
 const appRoot = document.getElementById('admin-app');
 if (appRoot) {
     render(h(App), appRoot);
-    console.log("Admin SPA Initialized with Preact, Navigo, Dexie (db.js). Theme Builder placeholder added.");
+    console.log("Admin SPA Initialized with Preact, Navigo, Dexie (db.js). Theme Builder responsive controls added.");
 } else {
     console.error("Admin app root element (#admin-app) not found.");
 }

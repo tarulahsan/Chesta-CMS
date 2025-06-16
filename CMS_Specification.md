@@ -327,22 +327,22 @@ This section details the purpose and primary functionalities of each key JavaScr
 
 ### 5. `builder.js` (Visual Theme Editor Logic)
 
-*   **Primary Responsibility:** To power the visual theme editor, allowing administrators to customize the appearance and layout of the website.
+*   **Primary Responsibility:** To power the visual theme editor, allowing administrators to customize the appearance and layout of the website. This includes managing the `themeConfig` object which defines global styles, page layouts, and section definitions.
 *   **Key Functionalities/Tasks:**
-    *   Renders the drag-and-drop interface for arranging and configuring theme sections and components.
+    *   Renders the drag-and-drop interface for arranging and configuring theme sections and components on page previews.
     *   Manages a live preview of the website as changes are made.
-    *   Handles theme settings adjustments, such as:
-        *   OKLCH color palette selections and application.
-        *   Font choices and integration with local fonts (from `/assets/fonts/`) or Google Fonts, including controls for font subsetting if possible.
-        *   Responsive layout controls (e.g., adjusting column widths, visibility on different devices).
-    *   Loads and applies HTML templates from `/templates/` for sections and components.
-    *   Saves the modified theme configuration (e.g., color schemes, layout settings, chosen components) to `db.js`.
-    *   Generates or updates the necessary CSS based on theme customizations.
+    *   Handles theme settings adjustments stored in `themeConfig`, such as:
+        *   Global Styles: OKLCH color palette selections, primary color, base font choices, font subset preferences.
+        *   Page Layouts: Defining which sections appear on specific page templates (e.g., homepage, default blog post).
+        *   Section Settings: Configuring individual section properties (e.g., text content, images, background colors, layout options within a section) based on fields defined in `themeConfig.predefinedSections`.
+    *   Loads and applies HTML templates from `/templates/` for sections and components, dynamically populating them with settings from the `themeConfig`.
+    *   Saves the entire modified `themeConfig` object to `db.js` via `setSetting(THEME_CONFIG_KEY, newThemeConfig)`.
+    *   Generates or updates the necessary CSS (or CSS custom properties) based on theme customizations in `themeConfig` to be included in the published site.
 *   **Interactions:**
-    *   `admin.js`: Integrated into the admin panel UI.
-    *   `db.js`: To save and retrieve theme configurations and styles.
+    *   `admin.js`: Integrated into the admin panel UI, specifically the "Themes" section.
+    *   `db.js`: To save and retrieve the `themeConfig` object.
     *   `/templates/`: Uses these for rendering editable sections and components.
-*   **General Notes:** This module will be highly interactive and visually focused.
+*   **General Notes:** This module is central to the visual customization capabilities of the CMS. It directly manipulates the `themeConfig` data structure.
 
 ---
 
@@ -491,23 +491,160 @@ This section describes the user's journey and key interactions within the `/admi
 
 ### 4. Visual Theme Builder
 
-*   **User Action:** Navigates to "Appearance" > "Customize Theme" or a similar menu item.
+*   **User Action:** Navigates to "Appearance" > "Customize Theme" or a similar menu item (now typically "Themes" in the sidebar).
 *   **System Response:**
-    *   `admin.js` loads the `builder.js` module and transitions to the theme builder interface.
-    *   A live preview of the homepage (or a selected page) is displayed.
-    *   A sidebar or panel shows available theme customization options.
-*   **User Action (Drag-and-Drop):** Drags a section (e.g., Hero, Gallery, Text Block, CTA from a list of available sections based on `/templates/`) onto the page preview.
-*   **System Response:** The `builder.js` updates the live preview to include the new section. Properties for the new section appear in the sidebar.
-*   **User Action (Reorder/Configure Sections):** Drags existing sections to reorder them or clicks on a section to edit its properties (text, images, background, etc.).
-*   **System Response:** Live preview updates immediately. Configuration options for the selected section are shown in the sidebar.
-*   **User Action (OKLCH Color Palette Editor):** Accesses the color settings. Selects predefined palettes or uses color pickers to adjust colors for text, background, primary/secondary accents.
-*   **System Response:** `builder.js` updates the live preview with the new color scheme. The OKLCH values are stored.
-*   **User Action (Font Subsetting):** Chooses fonts for headings and body text from a list (local fonts from `/assets/fonts/` or Google Fonts). If Google Fonts, options to select character subsets might be available.
-*   **System Response:** Live preview updates with the new fonts. Configuration is noted.
-*   **User Action (Responsive Layout Editor):** Clicks icons to switch the live preview between desktop, tablet, and mobile views. Uses tools (if available) to adjust visibility or styling of elements specifically for that breakpoint.
-*   **System Response:** Preview resizes. Adjustments are applied and stored as part of the responsive settings for the theme.
-*   **User Action:** Clicks "Save Theme."
-*   **System Response:** `builder.js` saves the complete theme configuration (section order, content overrides in sections, color palettes, font choices, responsive settings) to `db.js`. A success message is shown.
+    *   The `/admin/themes` route is activated.
+    *   `admin.js` (specifically the `App` component's routing logic) renders the `ThemeBuilderPage` component within the main `ContentArea`.
+    *   The `ThemeBuilderPage` displays:
+        *   A "Preview Area" placeholder.
+        *   A "Controls Panel" (e.g., styled with `.glassmorphic`) containing:
+            *   A primary color picker (`input type="color"`).
+            *   A base font selector (`select` dropdown).
+            *   An inline preview of the selected color and font.
+            *   A "Save Theme Settings" button.
+*   **User Action (Interacting with Controls):**
+    *   User selects a new primary color using the color picker.
+    *   User chooses a new base font from the dropdown.
+*   **System Response (Live Feedback in Controls Panel):**
+    *   The `ThemeBuilderPage` component updates its internal state.
+    *   The inline preview sample text within the "Controls Panel" immediately reflects the new color and font selection.
+*   **User Action (Saving):** Clicks the "Save Theme Settings" button.
+*   **System Response:**
+    *   The `ThemeBuilderPage` component takes the current state values (primary color, base font).
+    *   It saves these settings as a structured object (e.g., `{ primaryColor: '...', baseFont: '...' }`) into `db.js` using `setSetting(THEME_CONFIG_KEY, themeConfigObject)`.
+    *   A success or error message is displayed to the user.
+    *   (Future: The actual site preview would update, and these settings would be used during the "Publish" process to generate themed CSS).
+
+#### 4.1. Theme Data Structures
+
+The Visual Theme Builder manages a comprehensive `themeConfig` object, which is stored as a single entry in the `settings` table of `db.js` (e.g., under the key `themeConfig`). This object encapsulates all aspects of the theme's design and layout.
+
+*   **`themeConfig` Object Structure Example:**
+    ```json
+    {
+      "globalStyles": {
+        "primaryColor": "oklch(65% 0.25 330)", // User's main brand color from color picker
+        "baseFont": "Roboto",                 // User's selected base font
+        "palette": {                          // Predefined or user-customizable color palette
+          "primary": "oklch(65% 0.25 330)",
+          "secondary": "oklch(70% 0.22 250)",
+          "accent": "oklch(75% 0.26 150)",
+          "textDark": "oklch(20% 0.02 270)",
+          "textLight": "oklch(98% 0.005 270)",
+          "backgroundMain": "oklch(98% 0.005 270)"
+        },
+        "fontSubsets": ["latin", "latin-ext"], // Example, could be configurable
+        "customCss": "/* User's custom CSS overrides */"
+      },
+      "pages": { // Defines layouts for different page types or specific pages
+        "homePage": {
+          "name": "Homepage Layout",
+          "sections": [ /* Ordered array of section instances */
+            {
+              "id": "hero_unique_123",      // Unique ID for this section instance
+              "type": "hero",               // Corresponds to a key in 'predefinedSections'
+              "settings": {                 // Settings specific to this instance of the hero section
+                "title": "Welcome to Our Awesome Site!",
+                "subtitle": "Discover amazing things here.",
+                "backgroundImageUrl": "/assets/images/hero-bg.jpg",
+                "buttonText": "Learn More",
+                "buttonLink": "/about",
+                "textColor": "oklch(100% 0 0)" // e.g., white text
+              },
+              "responsive": { // Optional responsive overrides for this section instance
+                "mobile": { "padding": "20px" },
+                "tablet": { "fontSize": "1.1em" }
+              }
+            },
+            {
+              "id": "textblock_xyz_789",
+              "type": "textBlock",
+              "settings": {
+                "heading": "About Us",
+                "paragraph": "We are a company dedicated to...",
+                "backgroundColor": "oklch(95% 0.01 270)"
+              }
+            }
+            // ... more section instances for the homepage
+          ]
+        },
+        "defaultBlogPost": {
+          "name": "Default Blog Post Layout",
+          "sections": [ /* Sections for a typical blog post */ ]
+        }
+        // ... other page layout definitions (e.g., 'defaultPage', 'contactPage')
+      },
+      "predefinedSections": [ // Palette of available section types for the builder
+        {
+          "type": "hero", // Unique identifier for this section type
+          "name": "Hero Section", // User-friendly name for the UI
+          "description": "A large prominent section, usually at the top of a page.",
+          "defaultSettings": { // Default values when a new hero section is added
+            "title": "Default Title",
+            "subtitle": "Default subtitle text.",
+            "backgroundImageUrl": "",
+            "buttonText": "Click Here",
+            "buttonLink": "#",
+            "textColor": "oklch(100% 0 0)",
+            "textAlignment": "center",
+            "minHeight": "400px"
+          },
+          "fields": [ // Metadata to auto-generate editing UI for this section type
+            { "name": "title", "label": "Title", "type": "text", "placeholder": "Enter main heading" },
+            { "name": "subtitle", "label": "Subtitle", "type": "textarea", "placeholder": "Enter subheading text" },
+            { "name": "backgroundImageUrl", "label": "Background Image URL", "type": "text", "inputType": "url" },
+            { "name": "buttonText", "label": "Button Text", "type": "text" },
+            { "name": "buttonLink", "label": "Button Link", "type": "text", "inputType": "url" },
+            { "name": "textColor", "label": "Text Color", "type": "color" },
+            { "name": "textAlignment", "label": "Text Alignment", "type": "select", "options": ["left", "center", "right"] },
+            { "name": "minHeight", "label": "Minimum Height (e.g., 400px)", "type": "text" }
+          ]
+        },
+        {
+          "type": "textBlock",
+          "name": "Text Block",
+          "description": "A simple block of text with an optional heading.",
+          "defaultSettings": {
+            "heading": "Section Heading",
+            "paragraph": "This is some default paragraph text. You can edit it.",
+            "backgroundColor": "transparent"
+          },
+          "fields": [
+            { "name": "heading", "label": "Heading", "type": "text" },
+            { "name": "paragraph", "label": "Paragraph Text", "type": "richtext" }, // Or 'textarea' for simpler
+            { "name": "backgroundColor", "label": "Background Color", "type": "color" }
+          ]
+        }
+        // ... more predefined section types (e.g., 'gallery', 'cardGrid', 'cta')
+      ]
+    }
+    ```
+
+*   **`globalStyles`**: Contains site-wide styling configurations like the primary color (selected via the color picker), base font family (selected via dropdown), a full OKLCH color palette for theme consistency, and potentially desired font subsets.
+*   **`pages` (or `layouts`)**: An object where each key represents a page template or a specific page layout (e.g., `homePage`, `defaultBlogPost`). Each page layout object contains a `name` for UI display and an ordered array of `sections`. This array defines the structure of that page type.
+*   **`sections` (within a page layout)**: Each object in the `sections` array represents an instance of a section on a page. It includes:
+    *   `id`: A unique identifier for this specific instance of the section (e.g., generated when the section is added to a page).
+    *   `type`: A string that maps to one of the `predefinedSections` types (e.g., 'hero', 'textBlock').
+    *   `settings`: An object containing the specific content and configuration for this section instance (e.g., title text, image URLs, background colors). These settings are based on the `fields` defined for the corresponding `predefinedSections` type.
+    *   `responsive`: (Optional) An object to store responsive overrides for this section instance (e.g., different padding or font sizes for mobile/tablet).
+*   **`predefinedSections`**: An array that acts as a palette of available section types that can be added to pages. Each object defines a section type:
+    *   `type`: A unique string identifier for the section type (e.g., 'hero', 'textBlock', 'gallery', 'cta').
+    *   `name`: A user-friendly name displayed in the Theme Builder UI (e.g., "Hero Section", "Text with Image").
+    *   `description`: A brief description of the section type for the user.
+    *   `defaultSettings`: An object containing the default settings values when a new instance of this section type is added to a page.
+    *   `fields`: An array of objects that define the editable fields for this section type. This metadata is used by the `builder.js` to dynamically generate the editing interface (form fields) for each section. Each field object includes:
+        *   `name`: The internal key for the setting (e.g., 'title', 'backgroundImageUrl').
+        *   `label`: A user-friendly label for the form field (e.g., "Headline Text", "Background Image URL").
+        *   `type`: The type of input field to generate (e.g., 'text', 'textarea', 'color', 'select', 'imageUpload', 'richtext').
+        *   `options`: (If `type` is 'select') An array of options for the dropdown.
+        *   `placeholder`: (Optional) Placeholder text for input fields.
+        *   `defaultValue`: (Optional, can also be covered by `defaultSettings`).
+
+#### 4.2. `db.js` Integration for Theme Configuration
+
+*   The entire `themeConfig` object, as detailed above, will be stored as a single JSON object in the `settings` store of `db.js`.
+*   The existing `getSetting('themeConfig')` and `setSetting('themeConfig', newThemeConfig)` methods in `db.js` are suitable for this purpose. Dexie.js automatically handles the serialization and deserialization of the JavaScript object to/from JSON when storing it in IndexedDB.
+*   **Consideration for Future Scalability:** While storing the entire `themeConfig` as a single object is simple for V1, if this object becomes exceptionally large or complex in future versions (e.g., with many page layouts and deeply nested sections), it might be beneficial to break it down. For example, `globalStyles` could remain in `settings`, while `pageLayouts` and `predefinedSections` could each be moved to their own Dexie tables/stores for more granular management. However, for V1, the single object approach under the `themeConfig` key is deemed appropriate.
 
 ---
 
@@ -1590,3 +1727,5 @@ These additional requirements and guarantees further define the CMS's commitment
 ---
 
 This specification document outlines the core tenets and detailed functionality of the Ultra-Lightweight Frontend CMS. It serves as a blueprint for development, ensuring all key aspects of the system are considered and implemented to achieve the project's goals.
+
+[end of CMS_Specification.md]
