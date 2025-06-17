@@ -59,7 +59,10 @@ async function handleRequest(request, env, ctx) {
     return jsonResponse({ success: false, error: 'OpenAI endpoint not found or method not allowed for this proxy.' }, { status: 404 });
 
   } else if (path.startsWith('/api-proxy/gemini/')) {
-    // return handleGeminiProxy(request, env); // Placeholder
+    if (path === '/api-proxy/gemini/v1beta/models/gemini-pro:generateContent' && method === 'POST') {
+      return handleGeminiGenerateContent(request, env);
+    }
+    return jsonResponse({ success: false, error: 'Gemini endpoint not found or method not allowed for this proxy.' }, { status: 404 });
   } else if (path.startsWith('/api-proxy/stripe/')) {
     // return handleStripeProxy(request, env); // Placeholder
   } else if (path.startsWith('/api-proxy/docusign/')) {
@@ -228,7 +231,89 @@ async function handleSetupConfig(request, env) { /* ... (existing, unchanged fro
 }
 
 // Placeholder for other handlers to be implemented later
-// async function handleGeminiProxy(request, env) { /* ... */ }
+async function handleGeminiGenerateContent(request, env) {
+  try {
+    if (request.headers.get("Content-Type") !== "application/json") {
+      return jsonResponse({ success: false, error: 'Invalid Content-Type. Expected application/json.' }, { status: 415 });
+    }
+
+    let requestBody;
+    try {
+      requestBody = await request.json();
+    } catch (e) {
+      return jsonResponse({ success: false, error: 'Invalid JSON payload.' }, { status: 400 });
+    }
+
+    const {
+      prompt, // Simple prompt string
+      parts,  // Or specific 'parts' array for more complex content
+      generationConfig // Optional: temperature, maxOutputTokens, etc.
+    } = requestBody;
+
+    let contents;
+    if (parts && Array.isArray(parts) && parts.length > 0) {
+      contents = [{ parts }];
+    } else if (prompt && typeof prompt === 'string' && prompt.trim() !== '') {
+      contents = [{ parts: [{ text: prompt }] }];
+    } else {
+      return jsonResponse({ success: false, error: 'Missing required field: either "parts" array or a "prompt" string must be provided.' }, { status: 400 });
+    }
+
+    const geminiApiKey = env.GEMINI_API_KEY;
+    if (!geminiApiKey) {
+      console.error('Gemini API key not configured in Worker secrets (GEMINI_API_KEY).');
+      return jsonResponse({ success: false, error: 'AI service not configured (missing API key for Gemini).' }, { status: 500 });
+    }
+
+    const geminiPayload = {
+      contents: contents,
+    };
+    if (generationConfig && typeof generationConfig === 'object') {
+      geminiPayload.generationConfig = generationConfig;
+    }
+
+    const geminiApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${geminiApiKey}`;
+
+    const geminiResponse = await fetch(geminiApiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(geminiPayload),
+    });
+
+    const responseBody = await geminiResponse.json().catch(() => ({ message: 'Non-JSON response from Gemini API', status: geminiResponse.status }));
+
+    if (!geminiResponse.ok) {
+      console.error('Gemini API Error:', geminiResponse.status, JSON.stringify(responseBody));
+      const errorMessage = responseBody.error?.message || responseBody.message || 'Unknown error from Gemini AI provider.';
+      return jsonResponse({ success: false, error: 'Failed to get response from Gemini AI provider.', details: errorMessage }, { status: geminiResponse.status < 500 && geminiResponse.status >= 400 ? geminiResponse.status : 502 });
+    }
+
+    // Extract generated text, robustly checking the structure
+    const generatedText = responseBody.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (typeof generatedText !== 'string') { // Check if text is a string, including empty string
+        console.error('Gemini response missing expected content or content is not text:', JSON.stringify(responseBody));
+        // Check for blocked content due to safety ratings
+        const blockReason = responseBody.candidates?.[0]?.finishReason;
+        const safetyRatings = responseBody.candidates?.[0]?.safetyRatings;
+        if (blockReason === 'SAFETY' || (safetyRatings && safetyRatings.some(r => r.probability !== 'NEGLIGIBLE' && r.probability !== 'LOW'))) {
+             return jsonResponse({ success: false, error: 'Content generation blocked due to safety concerns.', details: { blockReason, safetyRatings } }, { status: 400 });
+        }
+        if (responseBody.promptFeedback?.blockReason) { // Also check promptFeedback for block reasons
+            return jsonResponse({ success: false, error: 'Prompt blocked due to safety concerns.', details: responseBody.promptFeedback }, { status: 400 });
+        }
+        return jsonResponse({ success: false, error: 'Gemini AI provider response did not contain expected text content structure.'}, { status: 500 });
+    }
+
+    return jsonResponse({ success: true, generatedText: generatedText }, { status: 200 });
+
+  } catch (error) {
+    console.error('Unhandled error in handleGeminiGenerateContent:', error.stack || error);
+    return jsonResponse({ success: false, error: 'Internal server error while processing Gemini AI request.' }, { status: 500 });
+  }
+}
+
 // async function handleStripeProxy(request, env) { /* ... */ }
 // async function handleDocuSignProxy(request, env) { /* ... */ }
 // async function handleFormSubmission(request, env) { /* ... */ }
